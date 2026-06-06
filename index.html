@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voyaging 2126</title>
+  <link rel="stylesheet" href="style.css?v=33" />
+</head>
+<body>
+  <!-- HUD overlay -->
+  <div id="hud">
+    <!-- Top header -->
+    <div class="hud-top">
+      <div class="panel hud-logo">
+        <div class="logo-mark">⊛</div>
+        <div>
+          <div class="logo-title">VOYAGING 2126</div>
+          <div class="logo-sub">Inner System Travel Atlas</div>
+        </div>
+      </div>
+      <div class="hud-stats">
+        <div class="stat"><span>SOL</span><b id="stat-date">2126.06.05</b></div>
+        <div class="stat"><span>UTC</span><b id="stat-time">00:00:00</b></div>
+      </div>
+    </div>
+
+    <!-- Voyage simulator + controls (top-right) -->
+    <div class="right-rail">
+      <div id="sim-menu" class="panel sim-menu">
+        <div class="panel-header"><span>VOYAGE SIMULATOR</span><i>///</i></div>
+        <div id="sim-stages" class="sim-stages">
+          <button class="nav-btn sim-stage" data-stage="full">&#8635; FROM START</button>
+          <button class="nav-btn sim-stage" data-stage="launch">01 &middot; LAUNCH</button>
+          <button class="nav-btn sim-stage" data-stage="cruise">02 &middot; CRUISE</button>
+          <button class="nav-btn sim-stage" data-stage="approach">03 &middot; APPROACH</button>
+          <button class="nav-btn sim-stage" data-stage="edl">04 &middot; ENTRY, DESCENT &amp; LANDING</button>
+          <button class="nav-btn sim-stage" data-stage="surface">05 &middot; SURFACE OPERATIONS</button>
+        </div>
+      </div>
+      <div id="voyage-controls" class="panel sim-controls hidden">
+        <div class="sim-progress"><div class="sim-progress-fill" id="v-progress"></div></div>
+        <div class="sim-buttons">
+          <button class="nav-btn" id="v-playpause">&#9654; PLAY</button>
+          <button class="nav-btn" id="v-replay">&#8635; REPLAY</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Voyage mode overlay -->
+    <div id="voyage" class="voyage hidden">
+      <div class="voyage-caption">
+        <div class="vc-tag" id="vc-tag">STAGE 01 &middot; LAUNCH</div>
+      </div>
+
+      <div class="panel voyage-panel">
+        <div class="panel-header"><span>TRANSIT &middot; EARTH &rarr; MARS</span><i>///</i></div>
+        <div class="panel-rows">
+          <div class="panel-row"><span>STAGE</span><b id="v-phase">LAUNCH</b></div>
+          <div class="panel-row"><span>ELAPSED</span><b id="v-elapsed">T+ 0:00</b></div>
+          <div class="panel-row"><span>VELOCITY</span><b id="v-vel">0.0 KM/S</b></div>
+          <div class="panel-row"><span>DISTANCE</span><b id="v-dist">0 KM ALT</b></div>
+          <div class="panel-row"><span>ENGINE</span><b id="v-engine" class="warn">&#9679; BURN</b></div>
+        </div>
+        <div class="divider"></div>
+        <div class="readout" id="v-law">KEPLER I &middot; The transfer path is an ellipse with the Sun at one focus.</div>
+        <div class="divider"></div>
+        <div class="panel-header"><span>TRAVELLER&rsquo;S LOG</span><i>///</i></div>
+        <div class="vc-notes" id="v-notes"></div>
+      </div>
+
+    </div>
+
+    <div class="vignette"></div>
+  </div>
+
+  <canvas id="scene"></canvas>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="main.js?v=33"></script>
+</body>
+</html>
