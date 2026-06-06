@@ -1,0 +1,13 @@
+# Agent / editor tooling (local config, not part of the app)
+.claude/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
