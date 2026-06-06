@@ -1,0 +1,329 @@
+/* ============================================================
+   Voyaging 2126 // Inner System Travel Atlas
+   Game-style HUD overlay for the solar-system / voyage scene
+   ============================================================ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --primary: #6ff1ff;
+  --primary-strong: #b8f8ff;
+  --primary-dim: rgba(111, 241, 255, 0.45);
+  --primary-faint: rgba(111, 241, 255, 0.12);
+  --primary-glow: rgba(111, 241, 255, 0.18);
+  --warn: #ffb86b;
+  --ok: #6effb6;
+  --danger: #ff5c8a;
+  --bg-deep: rgba(2, 8, 16, 0.78);
+  --bg-frame: rgba(0, 16, 26, 0.55);
+  --grid: rgba(111, 241, 255, 0.06);
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: #000;
+  color: var(--primary);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Menlo', 'Courier New', monospace;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+/* Shared spin keyframe (used by the logo mark) */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   HUD
+   ============================================================ */
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  font-size: 11px;
+  transition: opacity 0.6s ease;
+}
+
+.panel {
+  background: var(--bg-deep);
+  border: 1px solid var(--primary-dim);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  position: relative;
+}
+.panel::before, .panel::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--primary);
+  pointer-events: none;
+}
+.panel::before { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
+.panel::after { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: var(--primary-dim);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--primary-faint);
+}
+.panel-header i { font-style: normal; color: var(--primary); }
+
+/* === Top header === */
+.hud-top {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  right: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+.hud-logo {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 18px;
+}
+.logo-mark {
+  font-size: 28px;
+  color: var(--primary);
+  text-shadow: 0 0 10px var(--primary);
+  animation: spin 14s linear infinite;
+}
+.logo-title {
+  font-size: 16px;
+  letter-spacing: 5px;
+  color: var(--primary-strong);
+}
+.logo-sub {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--primary-dim);
+  margin-top: 2px;
+}
+.hud-stats {
+  display: flex;
+  gap: 1px;
+}
+.stat {
+  background: var(--bg-deep);
+  border: 1px solid var(--primary-dim);
+  padding: 8px 18px;
+  text-align: center;
+  min-width: 80px;
+  position: relative;
+  backdrop-filter: blur(6px);
+}
+.stat::before, .stat::after {
+  content: '';
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border: 1px solid var(--primary);
+}
+.stat::before { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
+.stat::after { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
+.stat span {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--primary-dim);
+}
+.stat b {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  color: var(--primary-strong);
+}
+.stat .ok { color: var(--ok); }
+
+.divider {
+  height: 1px;
+  background: var(--primary-faint);
+  margin: 14px 0;
+}
+/* === Panel rows (used by the voyage telemetry panel) === */
+.panel-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+}
+.panel-row {
+  display: flex;
+  justify-content: space-between;
+}
+.panel-row span { color: var(--primary-dim); }
+.panel-row b { color: var(--primary-strong); font-weight: 400; }
+.readout {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--primary-faint);
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--primary-dim);
+  letter-spacing: 0.5px;
+}
+/* === Buttons (sim stages, voyage views + transport) === */
+.nav-btn {
+  background: transparent;
+  border: 1px solid var(--primary-dim);
+  color: var(--primary);
+  padding: 9px 14px;
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  position: relative;
+  min-width: 78px;
+}
+.nav-btn::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border: 1px solid transparent;
+  transition: border-color 0.18s ease;
+}
+.nav-btn:hover {
+  background: var(--primary-glow);
+  border-color: var(--primary);
+  color: var(--primary-strong);
+  box-shadow: 0 0 12px var(--primary-glow);
+}
+.nav-btn:hover::before { border-color: var(--primary-faint); }
+.nav-btn.active {
+  background: var(--primary);
+  color: #001520;
+  border-color: var(--primary-strong);
+  box-shadow: 0 0 18px var(--primary), inset 0 0 8px rgba(0, 21, 32, 0.3);
+}
+
+/* === Vignette === */
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.5) 100%);
+}
+
+/* ============================================================
+   VOYAGE MODE
+   ============================================================ */
+.right-rail {
+  position: absolute;
+  top: 94px;
+  right: 18px;
+  width: 214px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+.sim-menu { width: 100%; padding: 14px; pointer-events: auto; }
+.sim-menu.hidden { display: none; }
+
+.sim-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sim-stage { width: 100%; min-width: 0; text-align: center; }
+.sim-stage.active {
+  background: var(--primary);
+  color: #001520;
+  border-color: var(--primary-strong);
+  box-shadow: 0 0 16px var(--primary-glow), inset 0 0 8px rgba(0, 21, 32, 0.3);
+}
+
+/* Simple transport controls (progress bar + play / replay), docked under the simulator */
+.sim-controls {
+  width: 100%;
+  padding: 12px;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sim-controls.hidden { display: none; }
+.sim-buttons { display: flex; gap: 8px; }
+.sim-buttons .nav-btn { flex: 1; min-width: 0; }
+.sim-progress {
+  height: 5px;
+  background: var(--primary-faint);
+  border: 1px solid var(--primary-faint);
+  overflow: hidden;
+}
+.sim-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--primary), var(--primary-strong));
+  box-shadow: 0 0 8px var(--primary-glow);
+  transition: width 0.1s linear;
+}
+
+.voyage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 12;
+  transition: opacity 0.5s ease;
+}
+.voyage.hidden { opacity: 0; pointer-events: none; }
+
+.voyage-caption {
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  width: min(640px, 82vw);
+}
+.vc-tag {
+  font-size: 17px;
+  letter-spacing: 6px;
+  color: var(--primary-strong);
+  text-shadow: 0 0 16px var(--primary-glow), 0 0 18px rgba(0, 0, 0, 0.85);
+}
+
+.voyage-panel {
+  position: absolute;
+  top: 120px;
+  left: 18px;
+  width: 286px;
+  padding: 16px;
+  pointer-events: auto;
+}
+.voyage-panel .panel-row b { transition: color 0.3s ease; }
+.voyage-panel .readout { transition: color 0.3s ease; min-height: 48px; }
+.vc-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.vc-notes .note {
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.3px;
+  color: var(--primary-dim);
+  padding-left: 2px;
+}
+
