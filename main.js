@@ -714,70 +714,113 @@ function voyageStats(s) {
   return { rAU, v, day: s * 259 };
 }
 
-// Passenger liner: a spine, a spinning habitat ring (artificial gravity),
-// an engine bell with a burn trail that only lights during the burns.
+// Crew shuttle (Ranger-style): a slim winged craft that rides up inside the rocket,
+// docks to the Endurance for the cruise, then undocks and lands on Mars. Nose +Z.
 function buildLiner() {
   const g = new THREE.Group();
-  const hull = new THREE.MeshStandardMaterial({ color: 0x9fb0c4, metalness: 0.9, roughness: 0.35, emissive: 0x24384e, emissiveIntensity: 0.75 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x33404f, metalness: 0.8, roughness: 0.5 });
+  const hull = new THREE.MeshStandardMaterial({ color: 0xc8d2de, metalness: 0.85, roughness: 0.35, emissive: 0x22343f, emissiveIntensity: 0.5 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2e3742, metalness: 0.8, roughness: 0.5 });
   const glowC = new THREE.MeshBasicMaterial({ color: 0x6ff1ff });
-  const warm = new THREE.MeshBasicMaterial({ color: 0xffb86b });
 
-  // Slender hull — narrower than the launch vehicle it rode up inside.
-  const fus = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.23, 5.2, 16), hull);
+  const fus = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 2.8, 18), hull);
   fus.rotation.x = Math.PI / 2; g.add(fus);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.23, 1.3, 16), hull);
-  nose.rotation.x = Math.PI / 2; nose.position.z = 3.2; g.add(nose);
-  const win = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.04, 8, 20), glowC);
-  win.position.z = 2.3; g.add(win);
-  const eng = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.7, 16), dark);
-  eng.rotation.x = Math.PI / 2; eng.position.z = -2.9; g.add(eng);
-
-  // Spinning habitat ring (forward axis = Z), with cabin lights.
-  const ringGrp = new THREE.Group();
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.7, 0.22, 12, 44), hull);
-  ringGrp.add(ring);
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * TAU;
-    const spoke = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 0.07), dark);
-    spoke.position.set(Math.cos(a) * 0.85, Math.sin(a) * 0.85, 0);
-    spoke.rotation.z = a; ringGrp.add(spoke);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1.1, 18), hull);
+  nose.rotation.x = Math.PI / 2; nose.position.z = 1.95; g.add(nose);
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 8, 0, TAU, 0, Math.PI * 0.6), glowC);
+  canopy.scale.set(1, 0.5, 1.7); canopy.rotation.x = -Math.PI / 2; canopy.position.set(0, 0.15, 0.85); g.add(canopy);
+  // delta wings + tail fin
+  for (const sgn of [-1, 1]) {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.04, 1.1), dark);
+    wing.position.set(sgn * 0.5, -0.04, -0.55); wing.rotation.y = sgn * -0.34; g.add(wing);
   }
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * TAU;
-    const lit = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.1), i % 3 ? glowC : warm);
-    lit.position.set(Math.cos(a) * 1.7, Math.sin(a) * 1.7, 0);
-    lit.rotation.z = a; ringGrp.add(lit);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.7), dark);
+  fin.position.set(0, 0.3, -1.0); g.add(fin);
+  const eng = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.27, 0.5, 16), dark);
+  eng.rotation.x = Math.PI / 2; eng.position.z = -1.6; g.add(eng);
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.03, 8, 18), glowC);
+  collar.position.z = 1.5; g.add(collar);
+  // small landing legs (used for the gentle Mars touchdown)
+  const legs = new THREE.Group();
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * TAU + Math.PI / 2;
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6), dark);
+    leg.position.set(Math.cos(a) * 0.22, -0.05, -1.2 + Math.sin(a) * 0.18);
+    leg.quaternion.setFromUnitVectors(UP, new THREE.Vector3(Math.cos(a) * 0.7, -1, Math.sin(a) * 0.5).normalize());
+    legs.add(leg);
   }
-  g.add(ringGrp);
+  legs.visible = false; g.add(legs);
 
-  // Engine plume (vacuum burn): a bright core + translucent bell + glow. Built
-  // pointing −Y, then rotated to fire aft (−Z). Lit only during the injection
-  // burn / staging ignition (toggled in updateHelio).
+  // Engine plume (aft, −Z): bright core + translucent bell + glow, lit during burns.
   const plume = new THREE.Group();
-  const pcore = new THREE.Mesh(new THREE.ConeGeometry(0.16, 1.5, 16, 1, true),
+  const pcore = new THREE.Mesh(new THREE.ConeGeometry(0.13, 1.3, 16, 1, true),
     new THREE.MeshBasicMaterial({ color: 0xe6f6ff, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending, depthWrite: false }));
-  pcore.rotation.x = Math.PI; pcore.position.y = -0.75; plume.add(pcore);
-  const pouter = new THREE.Mesh(new THREE.ConeGeometry(0.3, 2.8, 18, 1, true),
+  pcore.rotation.x = Math.PI; pcore.position.y = -0.65; plume.add(pcore);
+  const pouter = new THREE.Mesh(new THREE.ConeGeometry(0.26, 2.4, 18, 1, true),
     new THREE.MeshBasicMaterial({ color: 0x6cc8ff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
-  pouter.rotation.x = Math.PI; pouter.position.y = -1.4; plume.add(pouter);
+  pouter.rotation.x = Math.PI; pouter.position.y = -1.2; plume.add(pouter);
   const trail = new THREE.Sprite(new THREE.SpriteMaterial({
     map: radialTexture(['rgba(200,235,255,0.95)', 'rgba(80,180,255,0.4)', 'rgba(0,90,210,0)']),
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
   }));
-  trail.scale.setScalar(3.0); trail.position.y = -0.6; plume.add(trail);
-  plume.rotation.x = Math.PI / 2; plume.position.z = -2.9; plume.visible = false; g.add(plume);
+  trail.scale.setScalar(2.6); trail.position.y = -0.5; plume.add(trail);
+  plume.rotation.x = Math.PI / 2; plume.position.z = -1.7; plume.visible = false; g.add(plume);
 
-  // Soft fill light travelling with the liner so the hull stays readable
-  // during the long engines-off coast (the Sun alone leaves it in silhouette).
-  const fill = new THREE.PointLight(0xbfe6ff, 0.7, 34, 2);
-  fill.position.set(0, 4, 1);
-  g.add(fill);
+  const fill = new THREE.PointLight(0xbfe6ff, 0.7, 24, 2); fill.position.set(0, 3, 1); g.add(fill);
 
-  g.userData.ring = ringGrp;
   g.userData.trail = trail;
   g.userData.plume = plume;
-  g.scale.setScalar(0.45);
+  g.userData.legs = legs;
+  g.scale.setScalar(0.5);
+  return g;
+}
+
+// The Endurance — a large rotating ring of habitat modules around a central docking
+// spine (artificial gravity for the long cruise). Spin axis = local +Z (travel axis).
+function buildEndurance() {
+  const g = new THREE.Group();
+  const hull = new THREE.MeshStandardMaterial({ color: 0xdfe5ec, metalness: 0.7, roughness: 0.4, emissive: 0x2a3340, emissiveIntensity: 0.35 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x3a424e, metalness: 0.7, roughness: 0.5 });
+  const warm = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
+  const cyan = new THREE.MeshBasicMaterial({ color: 0x6ff1ff });
+
+  const ringR = 3.0;
+  const ringGrp = new THREE.Group();
+  // structural ring (torus in XY, normal +Z)
+  ringGrp.add(new THREE.Mesh(new THREE.TorusGeometry(ringR, 0.09, 10, 60), dark));
+  // 12 habitat modules around the ring, with glowing windows facing +Z
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * TAU;
+    const mod = new THREE.Group();
+    mod.add(new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.62, 0.6), i % 2 ? hull : dark));
+    const win = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.14, 0.02), i % 3 ? warm : cyan);
+    win.position.z = 0.31; mod.add(win);
+    mod.position.set(Math.cos(a) * ringR, Math.sin(a) * ringR, 0);
+    mod.rotation.z = a + Math.PI / 2;   // long axis → tangent
+    ringGrp.add(mod);
+  }
+  // 4 spokes from the hub out to the ring
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * TAU;
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.14, ringR, 0.14), dark);
+    spoke.position.set(Math.cos(a) * ringR / 2, Math.sin(a) * ringR / 2, 0);
+    spoke.rotation.z = a - Math.PI / 2;   // long axis (Y) → radial
+    ringGrp.add(spoke);
+  }
+  g.add(ringGrp);
+
+  // Central spine / docking hub along Z (the travel axis).
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 2.8, 18), hull); core.rotation.x = Math.PI / 2; g.add(core);
+  const ringHub = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.5, 18), dark); ringHub.rotation.x = Math.PI / 2; g.add(ringHub);
+  const dockNode = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.42, 0.5, 14), dark); dockNode.rotation.x = Math.PI / 2; dockNode.position.z = 1.55; g.add(dockNode);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.7, 14), hull); nose.rotation.x = Math.PI / 2; nose.position.z = 2.0; g.add(nose);
+  const aft = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 0.5, 18), dark); aft.rotation.x = Math.PI / 2; aft.position.z = -1.6; g.add(aft);
+  // a few hub running-lights
+  for (let i = 0; i < 4; i++) { const a = (i / 4) * TAU; const l = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), cyan); l.position.set(Math.cos(a) * 0.46, Math.sin(a) * 0.46, 0.4); g.add(l); }
+
+  const fill = new THREE.PointLight(0xbfe6ff, 0.6, 36, 2); fill.position.set(0, 5, 2); g.add(fill);
+
+  g.userData.ring = ringGrp;
+  g.scale.setScalar(0.5);
   return g;
 }
 
@@ -800,6 +843,7 @@ const E_POS = new THREE.Vector3(64, 0, 0);            // Earth at departure (EAR
 const E_R = planetMeshes.earth.config.size;          // Earth radius (scene units)
 const clamp01 = x => Math.max(0, Math.min(1, x));
 const BASE_N = new THREE.Vector3(2.2, 1.15, 3.0).normalize();   // Mars-surface normal the colony sits on (faces the camera)
+const AXIS_Z = new THREE.Vector3(0, 0, 1);                       // craft/station nose-or-hub axis (local +Z)
 
 // Ascent path: rise vertically off the pad, pitch over (gravity turn), level out.
 const lp = (y, z) => E_POS.clone().add(new THREE.Vector3(0, E_R + y, z));
@@ -1129,13 +1173,13 @@ const PHASES = [
       '~9 minutes of burn to reach 28,000 km/h — orbital speed.',
       'Then the engines cut and you’re suddenly weightless.',
     ] },
-  { key: 'cruise', label: '02 · CRUISE', short: 'CRUISE', dur: 48, mode: 'helio', s0: 0.03, s1: 0.78, view: 'ring',
+  { key: 'cruise', label: '02 · CRUISE', short: 'CRUISE', dur: 48, mode: 'helio', s0: 0.03, s1: 0.78, view: 'endurance',
     tag: 'STAGE 02 · CRUISE',
     law: 'NEWTON I + KEPLER · coasting on an ellipse',
     facts: [
-      'An 8-month coast to Mars — engines off, floating the whole way.',
-      'Zero-g weakens you: bones lose ~1% density a month, muscles waste — so you train ~2 hrs a day.',
-      'Spin the habitat ring (~2 rpm) and its rim feels like gravity.',
+      'Dock with the Endurance — a giant ring station that carries you to Mars.',
+      'The whole ring spins (~2 rpm); centrifugal force becomes your gravity (a = ω²r).',
+      'Then engines off — an 8-month coast on an ellipse, floating between worlds.',
       'Food is freeze-dried & vacuum-packed; water — even urine — is recycled.',
     ] },
   { key: 'approach', label: '03 · APPROACH', short: 'APPROACH', dur: 24, mode: 'helio', s0: 0.78, s1: 0.94, view: 'map',
@@ -1147,13 +1191,13 @@ const PHASES = [
       'Millions of km from help: a radio call to Earth takes minutes each way.',
       'Cosmic radiation is a constant risk; you shelter in a shielded bay in solar storms.',
     ] },
-  { key: 'edl', label: '04 · ENTRY, DESCENT & LANDING', short: 'ENTRY / DESCENT / LANDING', dur: 20, mode: 'edl', s0: 0.94, s1: 1.0,
-    tag: 'STAGE 04 · ENTRY, DESCENT & LANDING',
-    law: 'NEWTON · braking burn',
+  { key: 'edl', label: '04 · DESCENT & LANDING', short: 'DESCENT & LANDING', dur: 20, mode: 'edl', s0: 0.94, s1: 1.0,
+    tag: 'STAGE 04 · DESCENT & LANDING',
+    law: 'NEWTON · powered descent',
     facts: [
-      'The famous “7 minutes of terror” — fully automated; too far for live control.',
-      'You hit the thin air at ~20,000 km/h; the heat shield glows near 1,000°C.',
-      'Parachutes deploy, then retro-rockets fire to slow you for touchdown.',
+      'The shuttle undocks from the Endurance and drops toward Mars.',
+      'Future tech: no parachutes — a smooth, computer-flown powered descent.',
+      'Engines throttle to a gentle hover and set you down softly on the legs.',
     ] },
   { key: 'surface', label: '05 · SURFACE OPERATIONS', short: 'SURFACE OPS', dur: 12, mode: 'helio', s0: 1.0, s1: 1.0, view: 'surface',
     tag: 'STAGE 05 · SURFACE OPERATIONS',
@@ -1194,6 +1238,11 @@ function viewTarget(view, st, s) {
   const side = new THREE.Vector3().crossVectors(vel, up).normalize();
   if (view === 'map')  { const c = new THREE.Vector3(-12, 0, 0); return { pos: c.clone().add(new THREE.Vector3(20, 182, 92)), look: c }; }
   if (view === 'ring') { return { pos: ship.clone().addScaledVector(side, 2.3).addScaledVector(up, 0.85).addScaledVector(vel, 0.7), look: ship.clone() }; }
+  if (view === 'endurance') {
+    // Look mostly down the travel axis from ahead-and-above so the spinning ring
+    // reads face-on, with the docked shuttle in the foreground and deep space behind.
+    return { pos: ship.clone().addScaledVector(vel, 7.0).addScaledVector(up, 3.0).addScaledVector(side, 2.2), look: ship.clone().addScaledVector(vel, 1.0) };
+  }
   if (view === 'chase'){ return { pos: ship.clone().addScaledVector(vel, -10).addScaledVector(side, 2.2).addScaledVector(up, 4.5), look: ship.clone().addScaledVector(vel, 4) }; }
   if (view === 'depart'){
     // Side-on staging shot: the separation axis runs across the frame — liner on
@@ -1223,6 +1272,7 @@ function updateLaunch(u) {
   if (voyage.frost) voyage.frost.visible = false;
   if (voyage.dust) voyage.dust.visible = false;
   if (voyage.base) voyage.base.visible = false;
+  if (voyage.station) voyage.station.visible = false;
   voyage.rocket.visible = voyage.launchTrail.visible = true;
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = (key === 'earth');
   orbitPaths.forEach(o => { o.visible = true; });
@@ -1298,119 +1348,93 @@ function updateLaunch(u) {
   return { pos: rp.clone().add(off), look: lookPt };
 }
 
-// Entry, Descent & Landing — the real "7 minutes of terror" beats:
-// hypersonic entry (bow shock + streaming plasma wake) → supersonic parachute +
-// heat-shield jettison → backshell release → retro-rocket powered descent with
-// dust kicked up off the surface, settling onto its legs.
+// Descent & Landing — futuristic + easy: the shuttle undocks from the Endurance
+// (parked in Mars orbit) and flies a smooth, controlled powered descent to a soft
+// touchdown — no parachutes, no fiery "7 minutes of terror".
 function updateEDL(u) {
-  voyage.ship.visible = voyage.rocket.visible = voyage.launchTrail.visible = voyage.flash.visible = false;
+  voyage.rocket.visible = voyage.launchTrail.visible = false;
+  voyage.lander.visible = false;
   voyage.ellipseFull.visible = voyage.ellipseTrail.visible = false;
   if (voyage.frost) voyage.frost.visible = false;
   if (voyage.base) voyage.base.visible = false;
   if (voyage.spentStage) voyage.spentStage.visible = false;
-  voyage.lander.visible = true;
+  voyage.ship.visible = true;
+  voyage.station.visible = true;                          // Endurance waits in orbit above
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = (key === 'mars');
   orbitPaths.forEach(o => { o.visible = false; });
 
-  // Mars at its rendezvous point. The craft flies a real guided-entry arc: a
-  // shallow, mostly-horizontal hypersonic entry that steepens into a vertical,
-  // retro-braked touchdown — not a straight drop.
   const s = 0.94 + u * 0.06;
   planetMeshes.mars.orbitGroup.rotation.y = -(MARS_START + s * MARS_SWEEP);
   const M = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(M);
   const mR = planetMeshes.mars.config.size;
   const dir = new THREE.Vector3(0.42, 0.74, 0.52).normalize();          // local "up" at the landing site
-  const tang = new THREE.Vector3().crossVectors(dir, UP).normalize();   // downrange (approach) axis
+  const tang = new THREE.Vector3().crossVectors(dir, UP).normalize();   // downrange axis
   const cross = new THREE.Vector3().crossVectors(dir, tang).normalize();
 
-  // Altitude eases to the surface; cross-range bleeds out by the start of powered
-  // descent, so motion goes shallow-horizontal → steep-vertical (a guided arc).
-  const edlPos = (uu) => {
-    const a = Math.pow(clamp01(1 - uu), 1.55) * 3.8 + 0.32;
-    const lat = Math.pow(clamp01((0.82 - uu) / 0.82), 1.25) * 6.5;
+  // Endurance parked in Mars orbit (ring still turning), where the shuttle undocked.
+  voyage.station.position.copy(M).addScaledVector(dir, mR + 8.5).addScaledVector(tang, 2.6);
+  voyage.station.quaternion.setFromUnitVectors(AXIS_Z, tang);
+  voyage.station.userData.ring.rotation.z = elapsed * 0.5;
+
+  // Shuttle: a smooth arc from just below the station down to a gentle touchdown.
+  const dpos = (uu) => {
+    const a = Math.pow(clamp01(1 - uu), 1.3) * 6.5 + 0.34;
+    const lat = Math.pow(clamp01((0.8 - uu) / 0.8), 1.2) * 4.0;
     return M.clone().addScaledVector(dir, mR + a).addScaledVector(tang, lat);
   };
-  const pos = edlPos(u);
+  const pos = dpos(u);
   const alt = pos.distanceTo(M) - mR;
-  const velDir = edlPos(Math.min(1, u + 0.012)).sub(pos);
-  if (velDir.lengthSq() < 1e-7) velDir.copy(tang).negate();
+  const velDir = dpos(Math.min(1, u + 0.012)).sub(pos);
+  if (velDir.lengthSq() < 1e-7) velDir.copy(dir).negate();
   velDir.normalize();
-  voyage.lander.position.copy(pos);
+  voyage.ship.position.copy(pos);
 
-  // Attitude: entry = heat-shield into the airflow (angled); under chute / powered
-  // descent = upright (nose up, engines down) with a gentle pendulum sway.
-  const sway = Math.sin(elapsed * 1.8) * (u > 0.42 && u < 0.82 ? 0.09 : 0.02);
-  const qEntry = new THREE.Quaternion().setFromUnitVectors(UP, velDir.clone().negate());
-  const qUp = new THREE.Quaternion().setFromUnitVectors(UP, dir.clone().applyAxisAngle(tang, sway));
-  voyage.lander.quaternion.copy(qEntry).slerp(qUp, clamp01((u - 0.32) / 0.13));
+  // Attitude: a nose-forward glide that smoothly pitches upright (engine down) to land.
+  const qGlide = new THREE.Quaternion().setFromUnitVectors(AXIS_Z, velDir);
+  const qUp = new THREE.Quaternion().setFromUnitVectors(AXIS_Z, dir);   // nose up, engine (−Z) toward Mars
+  voyage.ship.quaternion.copy(qGlide).slerp(qUp, clamp01((u - 0.35) / 0.3));
 
-  const rd = voyage.lander.userData;
-  const entry = u < 0.42, descent = u >= 0.42 && u < 0.78, landing = u >= 0.78;
-
-  // --- Hypersonic entry: bow shock on the shield + a long, turbulent plasma wake ---
-  const ei = clamp01(1 - Math.abs(u - 0.16) / 0.26);
-  rd.bow.material.opacity = ei * (0.7 + Math.sin(elapsed * 30) * 0.2);
-  rd.bow.scale.setScalar(1.6 + ei * 0.9 + Math.sin(elapsed * 26) * 0.22);
-  rd.wake.forEach((sp, i) => {
-    const f = i / (rd.wake.length - 1);                    // 0 = at craft, 1 = far behind
-    sp.material.opacity = ei * (1 - f) * 0.85;
-    sp.material.color.setRGB(1, 0.5 + (1 - f) * 0.45, 0.18 + (1 - f) * 0.4);   // white-hot → deep orange
-    const turb = 1 + Math.sin(elapsed * 17 + i * 1.6) * 0.14 * f;              // turbulent shimmer down the tail
-    sp.scale.setScalar((0.55 + f * 1.95) * (0.6 + ei * 0.7) * turb);
-  });
-
-  // --- Heat-shield jettison: drops away and tumbles once decelerated ---
-  if (u < 0.5) { rd.hs.visible = true; rd.hs.position.y = -0.14; rd.hs.rotation.set(Math.PI, 0, 0); }
-  else if (u < 0.66) {
-    const j = (u - 0.5) / 0.16;
-    rd.hs.visible = true;
-    rd.hs.position.y = -0.14 - j * 4.5;                    // falls toward Mars
-    rd.hs.rotation.set(Math.PI + j * 6, j * 4, 0);         // tumbling
-  } else rd.hs.visible = false;
-
-  // --- Parachute: supersonic snatch (over-inflate, then settle), ride, cut away ---
-  if (descent) {
-    rd.chute.visible = true; rd.chute.position.y = 0;
-    const inf = clamp01((u - 0.42) / 0.045);
-    const snatch = 1 + Math.max(0, 1 - Math.abs(u - 0.475) / 0.04) * 0.28;     // brief over-inflation
-    rd.chute.scale.set(inf * snatch, (0.5 + inf * 0.5) * snatch, inf * snatch);
-    rd.canopy.material.opacity = 1;
-  } else if (landing && u < 0.86) {
-    const r = (u - 0.78) / 0.08;                          // backshell + chute cut away upward
-    rd.chute.visible = true; rd.chute.position.y = r * 5; rd.chute.scale.set(1, 1, 1);
-    rd.canopy.material.opacity = 1 - r;
-  } else { rd.chute.visible = false; }
-
-  // --- Powered descent: retros throttle UP as the ground nears, braking to a hover ---
-  rd.retros.visible = landing;
+  const sd = voyage.ship.userData;
+  const landing = u >= 0.55;
+  // Braking plume: lights for the powered descent and throttles to a gentle hover.
+  sd.plume.visible = landing;
   if (landing) {
-    const thr = 0.55 + clamp01((u - 0.78) / 0.16) * 0.7;
-    rd.retros.scale.set(1, thr + Math.sin(elapsed * 44) * 0.14, 1);
-  }
-  rd.legs.visible = u > 0.7;
+    const thr = 0.5 + clamp01((u - 0.55) / 0.4) * 0.7;
+    sd.plume.scale.set(1, thr + Math.sin(elapsed * 40) * 0.12, 1);
+    sd.trail.material.opacity = 0.85; sd.trail.scale.setScalar(2.0);
+  } else { sd.trail.material.opacity = 0; sd.trail.scale.setScalar(0.001); }
+  sd.legs.visible = u > 0.68;
 
-  // --- Dust: blown radially out in a thin sheet as the retros hit the ground ---
+  // Soft entry shimmer (futuristic heat shielding) — a gentle glow, not a fireball.
+  voyage.flash.visible = u < 0.34;
+  if (voyage.flash.visible) {
+    const gi = clamp01(1 - Math.abs(u - 0.14) / 0.18);
+    voyage.flash.position.copy(pos).addScaledVector(velDir, 0.5);
+    voyage.flash.material.opacity = gi * 0.5;
+    voyage.flash.scale.setScalar(1.2 + gi * 1.4);
+  }
+
+  // Light dust as it settles (gentle, not a big kick-up).
   if (voyage.dust) {
-    const near = landing && alt < 1.4;
+    const near = landing && alt < 1.2;
     voyage.dust.visible = near;
     if (near) {
-      const d = clamp01((1.4 - alt) / 1.2);                // grows as the craft settles
-      voyage.dust.position.copy(M).addScaledVector(dir, mR + 0.06);
-      voyage.dust.quaternion.setFromUnitVectors(UP, dir);                       // lie the sheet on the ground plane
+      const d = clamp01((1.2 - alt) / 1.0);
+      voyage.dust.position.copy(M).addScaledVector(dir, mR + 0.05);
+      voyage.dust.quaternion.setFromUnitVectors(UP, dir);
       voyage.dust.userData.parts.forEach(p => {
-        const reach = d * p.userData.speed;
-        p.position.set(p.userData.dir.x * reach * 1.3, Math.abs(p.userData.dir.y) * reach * 0.18, p.userData.dir.z * reach * 1.3);
-        p.material.opacity = d * (1 - d * 0.35) * 0.5;
-        p.scale.setScalar(p.userData.size * (1 + reach * 1.5));
+        const reach = d * p.userData.speed * 0.8;
+        p.position.set(p.userData.dir.x * reach, Math.abs(p.userData.dir.y) * reach * 0.15, p.userData.dir.z * reach);
+        p.material.opacity = d * (1 - d * 0.4) * 0.35;
+        p.scale.setScalar(p.userData.size * (1 + reach));
       });
     }
   }
 
-  // --- Camera: side-on for the entry streak, closer for the chute, low for touchdown ---
+  // Camera: 3/4 following the shuttle down, Mars below and the Endurance above early on.
   let camP, lookP;
-  if (entry)        { camP = pos.clone().addScaledVector(cross, 6.0).addScaledVector(dir, 1.7).addScaledVector(tang, 2.2); lookP = pos.clone().addScaledVector(velDir, 1.2); }
-  else if (descent) { camP = pos.clone().addScaledVector(cross, 4.8).addScaledVector(dir, 1.1).addScaledVector(tang, 0.6); lookP = pos.clone().addScaledVector(dir, 0.3); }
-  else              { camP = pos.clone().addScaledVector(cross, 3.3).addScaledVector(dir, 0.55).addScaledVector(tang, 0.7); lookP = pos.clone().addScaledVector(dir, -0.25); }
+  if (u < 0.4) { camP = pos.clone().addScaledVector(cross, 5.5).addScaledVector(dir, 1.6).addScaledVector(tang, 2.0); lookP = pos.clone().addScaledVector(velDir, 1.0); }
+  else         { camP = pos.clone().addScaledVector(cross, 3.4).addScaledVector(dir, 0.7).addScaledVector(tang, 0.6); lookP = pos.clone().addScaledVector(dir, -0.2); }
   return { pos: camP, look: lookP };
 }
 
@@ -1420,86 +1444,60 @@ function updateHelio(ph, u, dt) {
   voyage.launchTrail.visible = false;
   voyage.flash.visible = false;
   if (voyage.spentStage) voyage.spentStage.visible = false;
-  voyage.ship.visible = ph.key !== 'surface';   // ship is "landed" / hidden on the surface
-  voyage.ellipseFull.visible = voyage.ellipseTrail.visible = ph.key !== 'surface';
+  if (voyage.frost) voyage.frost.visible = false;
+  if (voyage.dust) voyage.dust.visible = false;
+  const isSurface = ph.key === 'surface';
+  voyage.ellipseFull.visible = voyage.ellipseTrail.visible = !isSurface;
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = true;
-  orbitPaths.forEach(o => { o.visible = ph.key !== 'surface'; });  // hide orbit rings on the Mars close-up
+  orbitPaths.forEach(o => { o.visible = !isSurface; });   // hide orbit rings on the Mars close-up
+
   const s = ph.s0 + u * (ph.s1 - ph.s0);
   const st = transferState(s);
-  voyage.ship.position.copy(st.pos);
-  if (s < 1) voyage.ship.lookAt(transferState(Math.min(1, s + 0.002)).pos);
-  voyage.ship.userData.ring.rotation.z += dt * 1.5;
-  voyage.ship.userData.ring.scale.setScalar(1);   // fully deployed unless stowed during cruise emergence
+  const fwd = transferState(Math.min(1, s + 0.004)).pos.clone().sub(st.pos).normalize();
+  if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, 1);
+  planetMeshes.mars.orbitGroup.rotation.y = -(MARS_START + s * MARS_SWEEP);
 
-  // Early in Cruise: stage separation. The spent launch vehicle is jettisoned —
-  // a flash and a shower of ice/gas off the separation plane, then it tumbles
-  // away as the liner's engine ignites and pulls it ahead.
-  if (ph.key === 'cruise') {
-    const sep = clamp01(u / 0.22);                        // slower, more readable
-    const fwd = transferState(Math.min(1, s + 0.004)).pos.clone().sub(st.pos).normalize();
-    const side = new THREE.Vector3().crossVectors(fwd, UP).normalize();
-    const plane = st.pos.clone().addScaledVector(fwd, -1.6);    // the staging interface, at the liner's tail
-    // The habitat ring rode up STOWED inside the fairing; it deploys once clear.
-    const dep = clamp01((sep - 0.18) / 0.5);
-    voyage.ship.userData.ring.scale.setScalar(0.12 + dep * 0.88);
-    voyage.rocket.visible = sep < 1;
-    voyage.rocket.userData.stage1.visible = false;       // first stage already fell away during launch
-    voyage.rocket.userData.flameGrp.visible = false;     // spent — engine off
-    if (sep < 1) {
-      const back = 2.7 + Math.pow(sep, 0.85) * 6.5;       // starts touching the liner's tail, then eases away
-      voyage.rocket.position.copy(st.pos)
-        .addScaledVector(fwd, -back)                       // falls behind
-        .addScaledVector(side, sep * 0.6)                 // drifts slightly aside
-        .addScaledVector(UP, -sep * 0.45);                // and a touch down
-      voyage.rocket.quaternion.setFromUnitVectors(UP, fwd);
-      const tumble = clamp01((sep - 0.2) / 0.8);          // drifts straight first, THEN slowly tumbles
-      voyage.rocket.rotateX(tumble * 2.8);
-      voyage.rocket.rotateZ(tumble * 1.5);
-    }
-    voyage.flash.visible = sep < 0.34;                    // separation flash at the interface
-    if (voyage.flash.visible) {
-      const fa = 1 - sep / 0.34;
-      voyage.flash.position.copy(plane);
-      voyage.flash.material.opacity = fa * 0.95;
-      voyage.flash.scale.setScalar(1.3 + (1 - fa) * 5.2);
-    }
-    // Ice/frost + pneumatic gas thrown off the separation plane (signature staging look).
-    if (voyage.frost) {
-      voyage.frost.visible = sep < 0.9;
-      voyage.frost.position.copy(plane);
-      voyage.frost.userData.parts.forEach(p => {
-        p.position.copy(p.userData.dir).multiplyScalar(sep * p.userData.speed * 2.4);
-        p.material.opacity = clamp01(1 - sep / 0.9) * 0.7;
-        p.scale.setScalar(p.userData.size * (0.6 + sep * 1.6));
-      });
-    }
-    // Spacecraft engine: OFF until the spent stage is clear, THEN ignites — a bright
-    // transient over-expansion settling into the steady vacuum plume of the injection
-    // burn. Real sequencing: separate first, then light.
+  if (!isSurface) {
+    // The Endurance flies the transfer, its ring spinning for artificial gravity.
+    voyage.station.visible = true;
+    voyage.station.position.copy(st.pos);
+    voyage.station.quaternion.setFromUnitVectors(AXIS_Z, fwd);
+    voyage.station.userData.ring.rotation.z += dt * 0.5;
+
+    // Crew shuttle: flies in and docks at the station's nose at the start of cruise,
+    // then rides along docked for the rest of the coast + approach.
+    voyage.ship.visible = true;
     const sd = voyage.ship.userData;
-    const lit = sep > 0.12 && u < 0.18;
-    sd.plume.visible = lit;
-    if (lit) {
-      const ign = Math.max(0, 1 - (sep - 0.12) / 0.07);   // ignition transient (over-expanded plume)
-      const fl = (0.9 + Math.sin(elapsed * 34) * 0.12) * (1 + ign * 0.9);
-      sd.plume.scale.set(fl, (1.1 + Math.sin(elapsed * 18) * 0.12) * (1 + ign * 1.2), fl);
-      sd.trail.material.opacity = 0.9;
-      sd.trail.scale.setScalar((2.6 + Math.sin(elapsed * 28) * 0.4) * (1 + ign * 0.7));
+    const docked = st.pos.clone().addScaledVector(fwd, 1.9);
+    if (ph.key === 'cruise') {
+      const dockT = clamp01(u / 0.24);
+      const appr = Math.pow(1 - dockT, 1.4);              // 1 = approaching, 0 = docked
+      const side = new THREE.Vector3().crossVectors(fwd, UP).normalize();
+      voyage.ship.position.copy(docked)
+        .addScaledVector(fwd, -appr * 5.0)
+        .addScaledVector(UP, -appr * 2.8)
+        .addScaledVector(side, appr * 1.6);
+      const burning = appr > 0.04;                         // docking maneuver burn
+      sd.plume.visible = burning;
+      sd.plume.scale.set(1, 1, 1);
+      sd.trail.material.opacity = burning ? 0.8 : 0;
+      sd.trail.scale.setScalar(burning ? 2.2 : 0.001);
     } else {
+      voyage.ship.position.copy(docked);
+      sd.plume.visible = false;
       sd.trail.material.opacity = 0; sd.trail.scale.setScalar(0.001);
     }
+    voyage.ship.quaternion.setFromUnitVectors(AXIS_Z, fwd);
+    sd.legs.visible = false;
   } else {
-    if (voyage.frost) voyage.frost.visible = false;
-    const sd = voyage.ship.userData;
-    sd.plume.visible = false;
-    sd.trail.material.opacity = 0; sd.trail.scale.setScalar(0.001);
+    voyage.station.visible = false;
+    voyage.ship.visible = false;
   }
-  if (voyage.dust) voyage.dust.visible = false;
-  planetMeshes.mars.orbitGroup.rotation.y = -(MARS_START + s * MARS_SWEEP);
+
   // Mars surface colony — shown only on the Surface Operations close-up, planted on
   // the camera-facing surface point with its spin frozen so it holds still.
   if (voyage.base) {
-    if (ph.key === 'surface') {
+    if (isSurface) {
       planetMeshes.mars.mesh.rotation.y = 0.6;
       const Mw = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(Mw);
       voyage.base.position.copy(Mw).addScaledVector(BASE_N, planetMeshes.mars.config.size);
@@ -1507,13 +1505,16 @@ function updateHelio(ph, u, dt) {
       voyage.base.visible = true;
     } else voyage.base.visible = false;
   }
-  const pts = []; const n = 90;
-  for (let i = 0; i <= n; i++) {
-    const nu = (i / n) * st.nu;
-    const r = A_T * (1 - E_T * E_T) / (1 + E_T * Math.cos(nu));
-    pts.push(new THREE.Vector3(Math.cos(EARTH_ANGLE + nu) * r, 0, Math.sin(EARTH_ANGLE + nu) * r));
+
+  if (!isSurface) {
+    const pts = []; const n = 90;
+    for (let i = 0; i <= n; i++) {
+      const nu = (i / n) * st.nu;
+      const r = A_T * (1 - E_T * E_T) / (1 + E_T * Math.cos(nu));
+      pts.push(new THREE.Vector3(Math.cos(EARTH_ANGLE + nu) * r, 0, Math.sin(EARTH_ANGLE + nu) * r));
+    }
+    voyage.ellipseTrail.geometry.setFromPoints(pts);
   }
-  voyage.ellipseTrail.geometry.setFromPoints(pts);
   return { s, st };
 }
 
@@ -1534,21 +1535,21 @@ function updateTelemetry(ph, u, s) {
     vEls['v-dist'].textContent = `${Math.round(u * 400)} KM ALT`;
     vEls['v-engine'].textContent = '● BURN'; vEls['v-engine'].className = 'warn';
   } else if (ph.mode === 'edl') {
-    vEls['v-elapsed'].textContent = `ALT ${Math.max(0, Math.round(Math.pow(1 - u, 1.5) * 125))} KM`;
-    vEls['v-vel'].textContent = `${(Math.pow(1 - u, 1.2) * 5.4 + 0.05).toFixed(1)} KM/S`;
-    vEls['v-dist'].textContent = u < 0.42 ? 'ATMOS. ENTRY' : (u < 0.78 ? 'PARACHUTE' : 'POWERED DESCENT');
-    const hot = u < 0.42, retro = u >= 0.78;
-    vEls['v-engine'].textContent = hot ? '▲ ENTRY' : (retro ? '● RETRO' : '○ CHUTE');
-    vEls['v-engine'].className = (hot || retro) ? 'warn' : '';
+    vEls['v-elapsed'].textContent = `ALT ${Math.max(0, Math.round(Math.pow(1 - u, 1.3) * 110))} KM`;
+    vEls['v-vel'].textContent = `${(Math.pow(1 - u, 1.4) * 3.4 + 0.04).toFixed(1)} KM/S`;
+    vEls['v-dist'].textContent = u < 0.2 ? 'UNDOCK' : (u < 0.55 ? 'GLIDE' : 'POWERED LANDING');
+    const retro = u >= 0.55;
+    vEls['v-engine'].textContent = retro ? '● RETRO' : '○ GLIDE';
+    vEls['v-engine'].className = retro ? 'warn' : '';
   } else {
     const st = voyageStats(s);
     vEls['v-elapsed'].textContent = `DAY ${Math.round(st.day)} / 259`;
     vEls['v-vel'].textContent = `${st.v.toFixed(1)} KM/S`;
     vEls['v-dist'].textContent = `${st.rAU.toFixed(2)} AU`;
-    // Match the visuals: separation (engine off) → injection burn → coast.
+    // Cruise opens with the docking maneuver, then engines-off coast on the ellipse.
     let eng = '○ OFF', warn = false;
-    if (ph.key === 'cruise' && u / 0.22 < 0.12) eng = '○ SEP';
-    else if (ph.burn || (ph.key === 'cruise' && u >= 0.026 && u < 0.18)) { eng = '● BURN'; warn = true; }
+    if (ph.key === 'cruise' && u < 0.24) { eng = '◐ DOCKING'; warn = true; }
+    else if (ph.burn) { eng = '● BURN'; warn = true; }
     vEls['v-engine'].textContent = eng;
     vEls['v-engine'].className = warn ? 'warn' : '';
   }
@@ -1589,7 +1590,7 @@ function updateVoyage(dt) {
     updateTelemetry(ph, u, s);
     // Cruise opens near Earth (the staging), then settles into the ring close-up.
     let view = ph.view;
-    if (ph.key === 'cruise') view = u < 0.24 ? 'depart' : 'ring';
+    if (ph.key === 'cruise') view = 'endurance';
     cam = viewTarget(view, st, s);
   }
   if (!voyage.camInit) { voyage.camPos.copy(cam.pos); voyage.camLook.copy(cam.look); voyage.camInit = true; }
@@ -1634,6 +1635,9 @@ function startVoyage() {
     voyage.spentStage = buildSpentStage();
     voyage.spentStage.visible = false;
     scene.add(voyage.spentStage);
+    voyage.station = buildEndurance();          // the Endurance ring station
+    voyage.station.visible = false;
+    scene.add(voyage.station);
     voyage.lander = buildLander();
     scene.add(voyage.lander);
     voyage.launchTrail = buildLaunchTrail();
@@ -1680,6 +1684,7 @@ function endVoyage() {
     if (voyage.dust) voyage.dust.visible = false;
     if (voyage.base) voyage.base.visible = false;
     if (voyage.spentStage) voyage.spentStage.visible = false;
+    if (voyage.station) voyage.station.visible = false;
   }
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = true;
   orbitPaths.forEach(o => { o.visible = true; });
