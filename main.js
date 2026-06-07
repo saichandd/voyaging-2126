@@ -739,14 +739,20 @@ function buildLiner() {
   eng.rotation.x = Math.PI / 2; eng.position.z = -1.6; g.add(eng);
   const collar = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.03, 8, 18), glowC);
   collar.position.z = 1.5; g.add(collar);
-  // small landing legs (used for the gentle Mars touchdown)
+  // Landing legs: splay out and aft (−Z) from the engine so they reach "down"
+  // when the shuttle lands engine-first. Deployed for the gentle Mars touchdown.
   const legs = new THREE.Group();
   for (let i = 0; i < 3; i++) {
     const a = (i / 3) * TAU + Math.PI / 2;
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6), dark);
-    leg.position.set(Math.cos(a) * 0.22, -0.05, -1.2 + Math.sin(a) * 0.18);
-    leg.quaternion.setFromUnitVectors(UP, new THREE.Vector3(Math.cos(a) * 0.7, -1, Math.sin(a) * 0.5).normalize());
+    const dirL = new THREE.Vector3(Math.cos(a) * 0.6, Math.sin(a) * 0.6, -1).normalize();   // out + aft
+    const base = new THREE.Vector3(Math.cos(a) * 0.18, Math.sin(a) * 0.18, -1.35);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.6, 6), dark);
+    leg.position.copy(base).addScaledVector(dirL, 0.3);
+    leg.quaternion.setFromUnitVectors(UP, dirL);
     legs.add(leg);
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.03, 8), dark);
+    pad.position.copy(base).addScaledVector(dirL, 0.6);
+    legs.add(pad);
   }
   legs.visible = false; g.add(legs);
 
@@ -770,7 +776,7 @@ function buildLiner() {
   g.userData.trail = trail;
   g.userData.plume = plume;
   g.userData.legs = legs;
-  g.scale.setScalar(0.5);
+  g.scale.setScalar(0.26);
   return g;
 }
 
@@ -1378,7 +1384,7 @@ function updateEDL(u) {
 
   // Shuttle: a smooth arc from just below the station down to a gentle touchdown.
   const dpos = (uu) => {
-    const a = Math.pow(clamp01(1 - uu), 1.3) * 6.5 + 0.34;
+    const a = Math.pow(clamp01(1 - uu), 1.3) * 6.5 + 0.48;   // min alt: shuttle rests on its legs, not buried
     const lat = Math.pow(clamp01((0.8 - uu) / 0.8), 1.2) * 4.0;
     return M.clone().addScaledVector(dir, mR + a).addScaledVector(tang, lat);
   };
@@ -1395,15 +1401,16 @@ function updateEDL(u) {
   voyage.ship.quaternion.copy(qGlide).slerp(qUp, clamp01((u - 0.35) / 0.3));
 
   const sd = voyage.ship.userData;
-  const landing = u >= 0.55;
-  // Braking plume: lights for the powered descent and throttles to a gentle hover.
-  sd.plume.visible = landing;
-  if (landing) {
-    const thr = 0.5 + clamp01((u - 0.55) / 0.4) * 0.7;
+  const landing = u >= 0.55, touched = u > 0.96;
+  // Braking plume: lights for the powered descent, throttles to a gentle hover, then
+  // cuts off the instant the legs settle on the surface.
+  sd.plume.visible = landing && !touched;
+  if (landing && !touched) {
+    const thr = 0.5 + clamp01((u - 0.55) / 0.38) * 0.7;
     sd.plume.scale.set(1, thr + Math.sin(elapsed * 40) * 0.12, 1);
     sd.trail.material.opacity = 0.85; sd.trail.scale.setScalar(2.0);
   } else { sd.trail.material.opacity = 0; sd.trail.scale.setScalar(0.001); }
-  sd.legs.visible = u > 0.68;
+  sd.legs.visible = u > 0.6;
 
   // Soft entry shimmer (futuristic heat shielding) — a gentle glow, not a fireball.
   voyage.flash.visible = u < 0.34;
@@ -1433,8 +1440,8 @@ function updateEDL(u) {
 
   // Camera: 3/4 following the shuttle down, Mars below and the Endurance above early on.
   let camP, lookP;
-  if (u < 0.4) { camP = pos.clone().addScaledVector(cross, 5.5).addScaledVector(dir, 1.6).addScaledVector(tang, 2.0); lookP = pos.clone().addScaledVector(velDir, 1.0); }
-  else         { camP = pos.clone().addScaledVector(cross, 3.4).addScaledVector(dir, 0.7).addScaledVector(tang, 0.6); lookP = pos.clone().addScaledVector(dir, -0.2); }
+  if (u < 0.4) { camP = pos.clone().addScaledVector(cross, 4.2).addScaledVector(dir, 1.4).addScaledVector(tang, 1.7); lookP = pos.clone().addScaledVector(velDir, 1.0); }
+  else         { camP = pos.clone().addScaledVector(cross, 2.8).addScaledVector(dir, 1.0).addScaledVector(tang, 0.7); lookP = pos.clone().addScaledVector(dir, -0.4); }
   return { pos: camP, look: lookP };
 }
 
@@ -1468,7 +1475,7 @@ function updateHelio(ph, u, dt) {
     // then rides along docked for the rest of the coast + approach.
     voyage.ship.visible = true;
     const sd = voyage.ship.userData;
-    const docked = st.pos.clone().addScaledVector(fwd, 1.9);
+    const docked = st.pos.clone().addScaledVector(fwd, 1.5);
     if (ph.key === 'cruise') {
       const dockT = clamp01(u / 0.24);
       const appr = Math.pow(1 - dockT, 1.4);              // 1 = approaching, 0 = docked
@@ -1537,9 +1544,9 @@ function updateTelemetry(ph, u, s) {
   } else if (ph.mode === 'edl') {
     vEls['v-elapsed'].textContent = `ALT ${Math.max(0, Math.round(Math.pow(1 - u, 1.3) * 110))} KM`;
     vEls['v-vel'].textContent = `${(Math.pow(1 - u, 1.4) * 3.4 + 0.04).toFixed(1)} KM/S`;
-    vEls['v-dist'].textContent = u < 0.2 ? 'UNDOCK' : (u < 0.55 ? 'GLIDE' : 'POWERED LANDING');
-    const retro = u >= 0.55;
-    vEls['v-engine'].textContent = retro ? '● RETRO' : '○ GLIDE';
+    vEls['v-dist'].textContent = u < 0.2 ? 'UNDOCK' : (u < 0.55 ? 'GLIDE' : (u > 0.96 ? 'TOUCHDOWN' : 'POWERED LANDING'));
+    const retro = u >= 0.55 && u <= 0.96;
+    vEls['v-engine'].textContent = u > 0.96 ? '○ DOWN' : (retro ? '● RETRO' : '○ GLIDE');
     vEls['v-engine'].className = retro ? 'warn' : '';
   } else {
     const st = voyageStats(s);
