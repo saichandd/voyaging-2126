@@ -723,13 +723,14 @@ function buildLiner() {
   const glowC = new THREE.MeshBasicMaterial({ color: 0x6ff1ff });
   const warm = new THREE.MeshBasicMaterial({ color: 0xffb86b });
 
-  const fus = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.62, 5.2, 16), hull);
+  // Slender hull — narrower than the launch vehicle it rode up inside.
+  const fus = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.23, 5.2, 16), hull);
   fus.rotation.x = Math.PI / 2; g.add(fus);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.3, 16), hull);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.23, 1.3, 16), hull);
   nose.rotation.x = Math.PI / 2; nose.position.z = 3.2; g.add(nose);
-  const win = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.05, 8, 20), glowC);
+  const win = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.04, 8, 20), glowC);
   win.position.z = 2.3; g.add(win);
-  const eng = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.78, 0.7, 16), dark);
+  const eng = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.7, 16), dark);
   eng.rotation.x = Math.PI / 2; eng.position.z = -2.9; g.add(eng);
 
   // Spinning habitat ring (forward axis = Z), with cabin lights.
@@ -776,7 +777,7 @@ function buildLiner() {
   g.userData.ring = ringGrp;
   g.userData.trail = trail;
   g.userData.plume = plume;
-  g.scale.setScalar(0.55);
+  g.scale.setScalar(0.45);
   return g;
 }
 
@@ -858,6 +859,30 @@ function buildRocket() {
   const light = new THREE.PointLight(0xffcaa0, 1.5, 9, 2); light.position.y = -2.6; g.add(light);
 
   g.userData = { stage1, upper, flameGrp, core, outer, glow, light };
+  g.scale.setScalar(0.3);
+  return g;
+}
+
+// The jettisoned first stage (same body as the rocket's stage 1) — flown in world
+// space as it tumbles back down toward Earth after staging. Scaled to match buildRocket.
+function buildSpentStage() {
+  const g = new THREE.Group();
+  const body = new THREE.MeshStandardMaterial({ color: 0xe6ecf2, metalness: 0.45, roughness: 0.45, emissive: 0x1c2636, emissiveIntensity: 0.35 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x39424f, metalness: 0.7, roughness: 0.4 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x15181d, metalness: 0.6, roughness: 0.55 });
+  const s1 = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 3.0, 24), body); s1.position.y = -1.0; g.add(s1);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.43, 0.28, 24), black); band.position.y = 0.2; g.add(band);
+  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.52, 0.45, 24), dark); skirt.position.y = -2.55; g.add(skirt);
+  for (let i = 0; i < 5; i++) {
+    const a = i === 4 ? 0 : (i / 4) * TAU, r = i === 4 ? 0 : 0.27;
+    const noz = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.36, 12), black);
+    noz.position.set(Math.cos(a) * r, -2.95, Math.sin(a) * r); g.add(noz);
+  }
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * TAU;
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.8, 0.5), dark);
+    fin.position.set(Math.cos(a) * 0.46, -2.3, Math.sin(a) * 0.46); fin.rotation.y = -a; g.add(fin);
+  }
   g.scale.setScalar(0.3);
   return g;
 }
@@ -1168,13 +1193,13 @@ function viewTarget(view, st, s) {
   const up = new THREE.Vector3(0, 1, 0);
   const side = new THREE.Vector3().crossVectors(vel, up).normalize();
   if (view === 'map')  { const c = new THREE.Vector3(-12, 0, 0); return { pos: c.clone().add(new THREE.Vector3(20, 182, 92)), look: c }; }
-  if (view === 'ring') { return { pos: ship.clone().addScaledVector(side, 2.9).addScaledVector(up, 1.0).addScaledVector(vel, 0.9), look: ship.clone() }; }
+  if (view === 'ring') { return { pos: ship.clone().addScaledVector(side, 2.3).addScaledVector(up, 0.85).addScaledVector(vel, 0.7), look: ship.clone() }; }
   if (view === 'chase'){ return { pos: ship.clone().addScaledVector(vel, -10).addScaledVector(side, 2.2).addScaledVector(up, 4.5), look: ship.clone().addScaledVector(vel, 4) }; }
   if (view === 'depart'){
     // Side-on staging shot: the separation axis runs across the frame — liner on
     // one side, the spent stage tumbling away on the other, frost shower between.
-    const look = ship.clone().addScaledVector(vel, -2.6);
-    const pos = look.clone().addScaledVector(side, 6.2).addScaledVector(up, 2.0).addScaledVector(vel, 0.6);
+    const look = ship.clone().addScaledVector(vel, -2.0);
+    const pos = look.clone().addScaledVector(side, 4.8).addScaledVector(up, 1.6).addScaledVector(vel, 0.5);
     return { pos, look };
   }
   if (view === 'surface') {
@@ -1203,34 +1228,74 @@ function updateLaunch(u) {
   orbitPaths.forEach(o => { o.visible = true; });
 
   const rd = voyage.rocket.userData;
-  rd.stage1.visible = true; rd.stage1.position.set(0, 0, 0); rd.stage1.rotation.set(0, 0, 0);
+  const sepU = 0.5;                                  // first-stage separation point
+  const staged = u >= sepU;
   rd.flameGrp.visible = true;
+  rd.upper.visible = true;
 
   // Eased ascent: hold on the pad, then accelerate upward (gravity turn).
   const p = Math.pow(u, 1.7);
   const rp = voyage.rocket.position.copy(launchCurve.getPoint(p));
   voyage.rocket.quaternion.setFromUnitVectors(UP, launchCurve.getTangent(p));
 
-  // Flame: stretch + flicker with thrust.
+  // Stage 1 rides along until separation, then it's flown away separately (below).
+  rd.stage1.visible = !staged;
+  if (!staged) { rd.stage1.position.set(0, 0, 0); rd.stage1.rotation.set(0, 0, 0); }
+
+  // Flame: a big first-stage plume at the base; after staging, a smaller upper-stage plume.
   const flick = 0.85 + Math.sin(elapsed * 42) * 0.15;
-  rd.flameGrp.scale.set(flick, (1.0 + u * 0.5) * flick, flick);
-  rd.glow.scale.setScalar(1.5 + Math.sin(elapsed * 26) * 0.25);
+  if (staged) {
+    rd.flameGrp.position.y = 0.45;
+    rd.flameGrp.scale.set(flick * 0.55, (0.8 + (u - sepU) * 0.5) * flick, flick * 0.55);
+  } else {
+    rd.flameGrp.position.y = -3.0;
+    rd.flameGrp.scale.set(flick, (1.0 + u * 0.5) * flick, flick);
+  }
+  rd.glow.scale.setScalar((staged ? 0.9 : 1.5) + Math.sin(elapsed * 26) * 0.25);
   rd.light.intensity = 1.4 + Math.sin(elapsed * 40) * 0.4;
 
-  // Exhaust column trailing up from the pad.
+  // Spent first stage: separates and tumbles back down toward Earth.
+  if (voyage.spentStage) {
+    voyage.spentStage.visible = staged;
+    if (staged) {
+      const sepP = Math.pow(sepU, 1.7);
+      const sepPos = launchCurve.getPoint(sepP);
+      const sepTan = launchCurve.getTangent(sepP);
+      const radialOut = sepPos.clone().sub(E_POS).normalize();
+      const sideV = new THREE.Vector3().crossVectors(sepTan, radialOut).normalize();
+      const fall = (u - sepU) / (1 - sepU);                  // 0 → 1 over the rest of the ascent
+      voyage.spentStage.position.copy(sepPos)
+        .addScaledVector(sepTan, fall * 1.1)                  // coasts on a moment
+        .addScaledVector(radialOut, -(fall * fall) * 5.5)     // then gravity pulls it back toward Earth
+        .addScaledVector(sideV, fall * 0.5);
+      voyage.spentStage.quaternion.setFromUnitVectors(UP, sepTan);
+      voyage.spentStage.rotateX(fall * 4.0);                  // tumbling end over end
+      voyage.spentStage.rotateZ(fall * 2.2);
+    }
+  }
+
+  // Exhaust column trailing up from the pad (thins out after staging).
   const puffs = voyage.launchTrail.userData.puffs;
   puffs.forEach((sp, i) => {
     const f = i / (puffs.length - 1);              // 0 = pad, 1 = at the rocket
     sp.position.copy(launchCurve.getPoint(p * f));
     const heat = f * f;                            // hotter near the rocket
     sp.material.color.setRGB(1, 0.5 + heat * 0.45, 0.28 + heat * 0.35);
-    sp.material.opacity = (0.1 + heat * 0.5) * (0.4 + p);
+    sp.material.opacity = (0.1 + heat * 0.5) * (0.4 + p) * (staged ? 0.5 : 1);
     sp.scale.setScalar(0.7 + (1 - f) * 2.4);       // older puffs spread out
   });
 
-  // Dramatic camera: low hero-angle on the pad, lifting to a chase as it climbs.
-  const off = new THREE.Vector3(-3.2, -1.0 + u * 4.2, -2.6 - u * 1.0);
-  return { pos: rp.clone().add(off), look: rp.clone().add(new THREE.Vector3(0, 0.6, 0)) };
+  // Camera: low hero-angle on the pad → chase; at staging, pull back to frame the
+  // upper stage climbing away from the tumbling first stage.
+  let off, lookPt;
+  if (staged) {
+    off = new THREE.Vector3(-4.8, 2.0, -5.2);
+    lookPt = rp.clone().lerp(voyage.spentStage.position, 0.4);
+  } else {
+    off = new THREE.Vector3(-3.2, -1.0 + u * 4.2, -2.6 - u * 1.0);
+    lookPt = rp.clone().add(new THREE.Vector3(0, 0.6, 0));
+  }
+  return { pos: rp.clone().add(off), look: lookPt };
 }
 
 // Entry, Descent & Landing — the real "7 minutes of terror" beats:
@@ -1242,6 +1307,7 @@ function updateEDL(u) {
   voyage.ellipseFull.visible = voyage.ellipseTrail.visible = false;
   if (voyage.frost) voyage.frost.visible = false;
   if (voyage.base) voyage.base.visible = false;
+  if (voyage.spentStage) voyage.spentStage.visible = false;
   voyage.lander.visible = true;
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = (key === 'mars');
   orbitPaths.forEach(o => { o.visible = false; });
@@ -1353,6 +1419,7 @@ function updateHelio(ph, u, dt) {
   voyage.lander.visible = false;
   voyage.launchTrail.visible = false;
   voyage.flash.visible = false;
+  if (voyage.spentStage) voyage.spentStage.visible = false;
   voyage.ship.visible = ph.key !== 'surface';   // ship is "landed" / hidden on the surface
   voyage.ellipseFull.visible = voyage.ellipseTrail.visible = ph.key !== 'surface';
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = true;
@@ -1362,6 +1429,7 @@ function updateHelio(ph, u, dt) {
   voyage.ship.position.copy(st.pos);
   if (s < 1) voyage.ship.lookAt(transferState(Math.min(1, s + 0.002)).pos);
   voyage.ship.userData.ring.rotation.z += dt * 1.5;
+  voyage.ship.userData.ring.scale.setScalar(1);   // fully deployed unless stowed during cruise emergence
 
   // Early in Cruise: stage separation. The spent launch vehicle is jettisoned —
   // a flash and a shower of ice/gas off the separation plane, then it tumbles
@@ -1371,7 +1439,11 @@ function updateHelio(ph, u, dt) {
     const fwd = transferState(Math.min(1, s + 0.004)).pos.clone().sub(st.pos).normalize();
     const side = new THREE.Vector3().crossVectors(fwd, UP).normalize();
     const plane = st.pos.clone().addScaledVector(fwd, -1.6);    // the staging interface, at the liner's tail
+    // The habitat ring rode up STOWED inside the fairing; it deploys once clear.
+    const dep = clamp01((sep - 0.18) / 0.5);
+    voyage.ship.userData.ring.scale.setScalar(0.12 + dep * 0.88);
     voyage.rocket.visible = sep < 1;
+    voyage.rocket.userData.stage1.visible = false;       // first stage already fell away during launch
     voyage.rocket.userData.flameGrp.visible = false;     // spent — engine off
     if (sep < 1) {
       const back = 2.7 + Math.pow(sep, 0.85) * 6.5;       // starts touching the liner's tail, then eases away
@@ -1559,6 +1631,9 @@ function startVoyage() {
     scene.add(voyage.ship);
     voyage.rocket = buildRocket();
     scene.add(voyage.rocket);
+    voyage.spentStage = buildSpentStage();
+    voyage.spentStage.visible = false;
+    scene.add(voyage.spentStage);
     voyage.lander = buildLander();
     scene.add(voyage.lander);
     voyage.launchTrail = buildLaunchTrail();
@@ -1604,6 +1679,7 @@ function endVoyage() {
     if (voyage.frost) voyage.frost.visible = false;
     if (voyage.dust) voyage.dust.visible = false;
     if (voyage.base) voyage.base.visible = false;
+    if (voyage.spentStage) voyage.spentStage.visible = false;
   }
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = true;
   orbitPaths.forEach(o => { o.visible = true; });
