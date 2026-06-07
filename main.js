@@ -1129,7 +1129,7 @@ const PHASES = [
       '~9 minutes of burn to reach 28,000 km/h — orbital speed.',
       'Then the engines cut and you’re suddenly weightless.',
     ] },
-  { key: 'cruise', label: '02 · CRUISE', short: 'CRUISE', dur: 48, mode: 'helio', s0: 0.0, s1: 0.78, view: 'ring',
+  { key: 'cruise', label: '02 · CRUISE', short: 'CRUISE', dur: 48, mode: 'helio', s0: 0.03, s1: 0.78, view: 'ring',
     tag: 'STAGE 02 · CRUISE',
     law: 'NEWTON I + KEPLER · coasting on an ellipse',
     facts: [
