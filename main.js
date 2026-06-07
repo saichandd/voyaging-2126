@@ -903,7 +903,7 @@ function buildRocket() {
   const light = new THREE.PointLight(0xffcaa0, 1.5, 9, 2); light.position.y = -2.6; g.add(light);
 
   g.userData = { stage1, upper, flameGrp, core, outer, glow, light };
-  g.scale.setScalar(0.3);
+  g.scale.setScalar(0.16);
   return g;
 }
 
@@ -927,7 +927,7 @@ function buildSpentStage() {
     const fin = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.8, 0.5), dark);
     fin.position.set(Math.cos(a) * 0.46, -2.3, Math.sin(a) * 0.46); fin.rotation.y = -a; g.add(fin);
   }
-  g.scale.setScalar(0.3);
+  g.scale.setScalar(0.16);
   return g;
 }
 
@@ -1332,18 +1332,18 @@ function updateLaunch(u) {
     const heat = f * f;                            // hotter near the rocket
     sp.material.color.setRGB(1, 0.5 + heat * 0.45, 0.28 + heat * 0.35);
     sp.material.opacity = (0.1 + heat * 0.5) * (0.4 + p) * (staged ? 0.5 : 1);
-    sp.scale.setScalar(0.7 + (1 - f) * 2.4);       // older puffs spread out
+    sp.scale.setScalar(0.28 + (1 - f) * 0.85);     // older puffs spread out
   });
 
-  // Camera: low hero-angle on the pad → chase; at staging, pull back to frame the
-  // upper stage climbing away from the tumbling first stage.
+  // Camera: a clean 3/4 from above the limb (not looking up from below), tracking the
+  // rocket up; at staging, pull back to frame the upper stage and the falling booster.
   let off, lookPt;
   if (staged) {
-    off = new THREE.Vector3(-4.8, 2.0, -5.2);
+    off = new THREE.Vector3(-3.4, 1.8, -3.8);
     lookPt = rp.clone().lerp(voyage.spentStage.position, 0.4);
   } else {
-    off = new THREE.Vector3(-3.2, -1.0 + u * 4.2, -2.6 - u * 1.0);
-    lookPt = rp.clone().add(new THREE.Vector3(0, 0.6, 0));
+    off = new THREE.Vector3(-2.4, 0.8 + u * 3.4, -2.7 - u * 0.8);
+    lookPt = rp.clone().add(new THREE.Vector3(0, 0.4, 0));
   }
   return { pos: rp.clone().add(off), look: lookPt };
 }
