@@ -10,6 +10,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // ============================================================
 // 1. CORE SETUP
@@ -52,8 +55,30 @@ const hdrTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
 });
 const composer = new EffectComposer(renderer, hdrTarget);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.6, 0.95);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.72, 1.0);
 composer.addPass(bloom);
+
+// Cinematic grade — edge chromatic aberration + soft vignette + fine film grain.
+// Runs in linear HDR before OutputPass (which is the sole ACES tonemap + sRGB encode).
+const gradePass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, grainAmt: { value: 0.04 }, caAmount: { value: 0.0016 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float time, grainAmt, caAmount; varying vec2 vUv;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+    void main(){
+      vec2 d = vUv - 0.5; float dist = length(d);
+      vec2 off = d * caAmount * (0.3 + dist*2.5);
+      vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
+      col *= mix(0.68, 1.0, smoothstep(0.85, 0.32, dist));     // soft vignette (never black)
+      col += (hash(vUv * vec2(1920.0, 1080.0) + fract(time) * 100.0) - 0.5) * grainAmt;
+      gl_FragColor = vec4(max(col, 0.0), 1.0);
+    }
+  `,
+});
+composer.addPass(gradePass);
+const smaaPass = new SMAAPass(innerWidth, innerHeight);
+composer.addPass(smaaPass);
 const outputPass = new OutputPass();
 composer.addPass(outputPass);
 
@@ -1816,6 +1841,7 @@ function animate() {
   const seconds = Math.floor(performance.now() / 1000);
   timeEl.textContent = new Date(seconds * 1000).toISOString().slice(11, 19);
 
+  gradePass.uniforms.time.value = t;
   composer.render();
   requestAnimationFrame(animate);
 }
