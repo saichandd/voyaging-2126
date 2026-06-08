@@ -1035,6 +1035,83 @@ const clamp01 = x => Math.max(0, Math.min(1, x));
 const BASE_N = new THREE.Vector3(2.2, 1.15, 3.0).normalize();   // Mars-surface normal the colony sits on (faces the camera)
 const AXIS_Z = new THREE.Vector3(0, 0, 1);                       // craft/station nose-or-hub axis (local +Z)
 
+// ============================================================
+// LAUNCH SITE — ground-perspective liftoff from Earth's day side
+// ------------------------------------------------------------
+// A real rocket is microscopic against the planet, so the iconic shot is from the
+// GROUND (rocket large in frame), then we pull back to reveal Earth at true scale with
+// the vehicle a small bright craft. The pad sits on a lit patch of Earth's surface; a
+// blue sky dome fills the view at low altitude and fades to space as the rocket climbs.
+const LAUNCH_N = new THREE.Vector3(-0.5, 0.55, 0.67).normalize();              // surface normal at the pad (sunlit)
+const LAUNCH_T1 = new THREE.Vector3().crossVectors(LAUNCH_N, UP).normalize();  // downrange / gravity-turn axis
+const LAUNCH_T2 = new THREE.Vector3().crossVectors(LAUNCH_T1, LAUNCH_N).normalize();
+const PAD = E_POS.clone().addScaledVector(LAUNCH_N, E_R);                       // pad point on Earth's surface
+const LAUNCH_MAXALT = 7.0, LAUNCH_RANGE = 3.0, ROCKET_BASE = 0.5;              // ascent shaping (scene units)
+
+function earthGroundTexture(s = 1024) {
+  const c = document.createElement('canvas'); c.width = c.height = s; const x = c.getContext('2d');
+  x.fillStyle = '#5f6b3c'; x.fillRect(0, 0, s, s);
+  for (let i = 0; i < 1600; i++) {
+    const r = 8 + Math.random() * 72, t = Math.random();
+    x.fillStyle = t < 0.4 ? `rgba(74,92,48,${0.06 + Math.random() * 0.14})`
+      : t < 0.75 ? `rgba(118,104,64,${0.05 + Math.random() * 0.12})`
+        : `rgba(48,66,38,${0.06 + Math.random() * 0.14})`;
+    x.beginPath(); x.arc(Math.random() * s, Math.random() * s, r, 0, TAU); x.fill();
+  }
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(5, 5);
+  return tex;
+}
+function buildEarthGround() {
+  const eR = planetMeshes.earth.config.size;
+  const geo = new THREE.SphereGeometry(eR, 96, 64, 0, TAU, 0, Math.PI * 0.5);
+  const mat = new THREE.MeshStandardMaterial({ map: earthGroundTexture(), color: 0x76844c, roughness: 1.0, metalness: 0.0, envMapIntensity: 0.3 });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.copy(E_POS);
+  m.quaternion.setFromUnitVectors(UP, LAUNCH_N);   // cap apex → pad
+  m.scale.setScalar(1.004);                         // lift just off the globe to kill z-fighting
+  m.receiveShadow = true;
+  return m;
+}
+function buildLaunchPad() {
+  const g = new THREE.Group();
+  const concrete = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.92, metalness: 0.05, envMapIntensity: 0.3 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x5a6573, roughness: 0.5, metalness: 0.85, envMapIntensity: 0.4 });
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.3, 0.16, 32), concrete); pad.receiveShadow = true; g.add(pad);
+  const mount = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.62, 0.22, 24), steel); mount.position.y = 0.18; mount.castShadow = mount.receiveShadow = true; g.add(mount);
+  const tower = new THREE.Group(); tower.position.set(0.85, 0, 0);    // service gantry beside the rocket
+  for (let i = 0; i < 4; i++) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 3.4, 0.06), steel);
+    leg.position.set(i < 2 ? 0.2 : -0.2, 1.7, i % 2 ? 0.2 : -0.2); leg.castShadow = true; tower.add(leg);
+  }
+  for (let j = 1; j < 8; j++) { const cr = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.46), steel); cr.position.y = j * 0.44; tower.add(cr); }
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.12), steel); arm.position.set(-0.45, 3.1, 0); tower.add(arm);
+  g.add(tower);
+  g.scale.setScalar(0.3);
+  return g;
+}
+function buildLaunchSky() {
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide, transparent: true, depthWrite: false, fog: false,
+    uniforms: {
+      uUp: { value: LAUNCH_N.clone() }, uFade: { value: 1.0 },
+      uHorizon: { value: new THREE.Color(0xaecdee) }, uZenith: { value: new THREE.Color(0x1f5aa8) },
+    },
+    vertexShader: `varying vec3 vL; void main(){ vL = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `uniform vec3 uUp,uHorizon,uZenith; uniform float uFade; varying vec3 vL;
+      void main(){
+        float a = dot(vL, normalize(uUp));
+        vec3 c = mix(uHorizon, uZenith, smoothstep(0.0, 0.8, max(a, 0.0)));
+        float alpha = uFade * smoothstep(-0.05, 0.25, a);   // fade below the horizon (ground covers it)
+        gl_FragColor = vec4(c, clamp(alpha, 0.0, 1.0) * 0.97);
+      }`,
+  });
+  const m = new THREE.Mesh(new THREE.SphereGeometry(36, 32, 16), mat);
+  m.position.copy(PAD);
+  m.renderOrder = -0.5;
+  return m;
+}
+
 // Ascent path: rise vertically off the pad, pitch over (gravity turn), level out.
 const lp = (y, z) => E_POS.clone().add(new THREE.Vector3(0, E_R + y, z));
 const launchCurve = new THREE.CatmullRomCurve3([
@@ -1498,83 +1575,103 @@ function viewTarget(view, st, s) {
 function updateLaunch(u) {
   voyage.ship.visible = voyage.ellipseFull.visible = voyage.ellipseTrail.visible = false;
   voyage.lander.visible = false;
+  if (voyage.ground) voyage.ground.visible = false;
   if (voyage.frost) voyage.frost.visible = false;
   if (voyage.dust) voyage.dust.visible = false;
   if (voyage.base) voyage.base.visible = false;
   if (voyage.station) voyage.station.visible = false;
   voyage.rocket.visible = voyage.launchTrail.visible = true;
+  if (voyage.earthGround) voyage.earthGround.visible = true;
+  if (voyage.launchPad) voyage.launchPad.visible = true;
+  if (voyage.launchSky) voyage.launchSky.visible = true;
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = (key === 'earth');
-  orbitPaths.forEach(o => { o.visible = true; });
+  planetMeshes.earth.mesh.rotation.y = 0.35;          // freeze Earth's spin so the pad/ground hold still
+  if (earthSats) earthSats.visible = false;           // no orbital satellites in the daytime sky
+  orbitPaths.forEach(o => { o.visible = false; });    // no orbit rings during the ground launch
 
   const rd = voyage.rocket.userData;
-  const sepU = 0.5;                                  // first-stage separation point
+  const sepU = 0.6;                                   // first-stage separation (MECO)
   const staged = u >= sepU;
   rd.flameGrp.visible = true;
   rd.upper.visible = true;
-
-  // Eased ascent: hold on the pad, then accelerate upward (gravity turn).
-  const p = Math.pow(u, 1.7);
-  const rp = voyage.rocket.position.copy(launchCurve.getPoint(p));
-  voyage.rocket.quaternion.setFromUnitVectors(UP, launchCurve.getTangent(p));
-
-  // Stage 1 rides along until separation, then it's flown away separately (below).
   rd.stage1.visible = !staged;
   if (!staged) { rd.stage1.position.set(0, 0, 0); rd.stage1.rotation.set(0, 0, 0); }
 
-  // Flame: a big first-stage plume at the base; after staging, a smaller upper-stage plume.
+  // Ascent: barely moves off the pad, then accelerates (altitude ~ u^1.9); gravity-turn
+  // downrange only after liftoff. Nose points along the flight-path tangent.
+  const altOf = (t) => LAUNCH_MAXALT * Math.pow(t, 1.9);
+  const rngOf = (t) => LAUNCH_RANGE * Math.pow(clamp01((t - 0.16) / 0.84), 1.5);
+  const sitePos = (t) => PAD.clone().addScaledVector(LAUNCH_N, altOf(t) + ROCKET_BASE).addScaledVector(LAUNCH_T1, rngOf(t));
+  const pos = sitePos(u);
+  const vel = sitePos(Math.min(1, u + 0.008)).sub(pos);
+  if (vel.lengthSq() < 1e-8) vel.copy(LAUNCH_N);
+  vel.normalize();
+  voyage.rocket.position.copy(pos);
+  voyage.rocket.quaternion.setFromUnitVectors(UP, vel);
+
+  // Flame
   const flick = 0.85 + Math.sin(elapsed * 42) * 0.15;
   if (staged) {
     rd.flameGrp.position.y = 0.45;
     rd.flameGrp.scale.set(flick * 0.55, (0.8 + (u - sepU) * 0.5) * flick, flick * 0.55);
   } else {
     rd.flameGrp.position.y = -3.0;
-    rd.flameGrp.scale.set(flick, (1.0 + u * 0.5) * flick, flick);
+    rd.flameGrp.scale.set(flick, (1.1 + u * 0.7) * flick, flick);
   }
-  rd.glow.scale.setScalar((staged ? 0.9 : 1.5) + Math.sin(elapsed * 26) * 0.25);
-  rd.light.intensity = 1.4 + Math.sin(elapsed * 40) * 0.4;
+  rd.glow.scale.setScalar((staged ? 0.9 : 1.7) + Math.sin(elapsed * 26) * 0.25);
+  rd.light.intensity = 1.5 + Math.sin(elapsed * 40) * 0.4;
 
-  // Spent first stage: separates and tumbles back down toward Earth.
+  // Spent first stage falls back toward Earth (down the surface normal) after MECO.
   if (voyage.spentStage) {
     voyage.spentStage.visible = staged;
     if (staged) {
-      const sepP = Math.pow(sepU, 1.7);
-      const sepPos = launchCurve.getPoint(sepP);
-      const sepTan = launchCurve.getTangent(sepP);
-      const radialOut = sepPos.clone().sub(E_POS).normalize();
-      const sideV = new THREE.Vector3().crossVectors(sepTan, radialOut).normalize();
-      const fall = (u - sepU) / (1 - sepU);                  // 0 → 1 over the rest of the ascent
+      const sepPos = sitePos(sepU);
+      const fall = (u - sepU) / (1 - sepU);
       voyage.spentStage.position.copy(sepPos)
-        .addScaledVector(sepTan, fall * 1.1)                  // coasts on a moment
-        .addScaledVector(radialOut, -(fall * fall) * 5.5)     // then gravity pulls it back toward Earth
-        .addScaledVector(sideV, fall * 0.5);
-      voyage.spentStage.quaternion.setFromUnitVectors(UP, sepTan);
-      voyage.spentStage.rotateX(fall * 4.0);                  // tumbling end over end
+        .addScaledVector(vel, fall * 1.0)
+        .addScaledVector(LAUNCH_N, -(fall * fall) * 5.0)
+        .addScaledVector(LAUNCH_T1, fall * 0.6);
+      voyage.spentStage.quaternion.setFromUnitVectors(UP, LAUNCH_N);
+      voyage.spentStage.rotateX(fall * 4.0);
       voyage.spentStage.rotateZ(fall * 2.2);
     }
   }
 
-  // Exhaust column trailing up from the pad (thins out after staging).
+  // Exhaust/smoke column from the pad up to the engines (thick + bright near the ground,
+  // thinning with altitude and after staging).
+  const alt = altOf(u), rng = rngOf(u);
   const puffs = voyage.launchTrail.userData.puffs;
   puffs.forEach((sp, i) => {
-    const f = i / (puffs.length - 1);              // 0 = pad, 1 = at the rocket
-    sp.position.copy(launchCurve.getPoint(p * f));
-    const heat = f * f;                            // hotter near the rocket
-    sp.material.color.setRGB(1, 0.5 + heat * 0.45, 0.28 + heat * 0.35);
-    sp.material.opacity = (0.1 + heat * 0.5) * (0.4 + p) * (staged ? 0.5 : 1);
-    sp.scale.setScalar(0.28 + (1 - f) * 0.85);     // older puffs spread out
+    const f = i / (puffs.length - 1);                  // 0 = pad, 1 = engines
+    sp.position.copy(PAD).addScaledVector(LAUNCH_N, (alt + ROCKET_BASE) * f).addScaledVector(LAUNCH_T1, rng * f);
+    const heat = f * f;
+    sp.material.color.setRGB(1, 0.55 + heat * 0.4, 0.42 + heat * 0.35);
+    sp.material.opacity = (0.18 + (1 - f) * 0.5) * (0.5 + u * 0.5) * (staged ? 0.35 : 1) * clamp01(1.6 - alt * 0.16);
+    sp.scale.setScalar(0.45 + (1 - f) * 1.2);
   });
 
-  // Camera: a clean 3/4 from above the limb (not looking up from below), tracking the
-  // rocket up; at staging, pull back to frame the upper stage and the falling booster.
-  let off, lookPt;
-  if (staged) {
-    off = new THREE.Vector3(-3.4, 1.8, -3.8);
-    lookPt = rp.clone().lerp(voyage.spentStage.position, 0.4);
-  } else {
-    off = new THREE.Vector3(-2.4, 0.8 + u * 3.4, -2.7 - u * 0.8);
-    lookPt = rp.clone().add(new THREE.Vector3(0, 0.4, 0));
+  // Sky fades out as the vehicle climbs out of the atmosphere.
+  if (voyage.launchSky) {
+    const fade = clamp01(1 - alt / (LAUNCH_MAXALT * 0.55));
+    voyage.launchSky.material.uniforms.uFade.value = fade;
+    voyage.launchSky.visible = fade > 0.01;
   }
-  return { pos: rp.clone().add(off), look: lookPt };
+
+  // Camera: low pad-level looking up → tracking the climb → pull back to Earth + space.
+  const up = LAUNCH_N, side = LAUNCH_T2, fwd = LAUNCH_T1;
+  let camP, lookP;
+  if (u < 0.22) {
+    const k = clamp01(u / 0.22);
+    camP = PAD.clone().addScaledVector(up, 0.5 + k * 0.7).addScaledVector(side, 3.1).addScaledVector(fwd, -0.7);
+    lookP = pos.clone().addScaledVector(up, 0.35);
+  } else if (u < sepU) {
+    camP = pos.clone().addScaledVector(side, 3.0).addScaledVector(up, -0.3).addScaledVector(fwd, -1.4);
+    lookP = pos.clone().addScaledVector(vel, 1.0);
+  } else {
+    camP = pos.clone().addScaledVector(side, 5.8).addScaledVector(up, 2.2).addScaledVector(fwd, -3.2);
+    lookP = pos.clone();
+  }
+  return { pos: camP, look: lookP, fov: 52 };
 }
 
 // Descent & Landing — futuristic + easy: the shuttle undocks from the Endurance
@@ -1583,6 +1680,10 @@ function updateLaunch(u) {
 function updateEDL(u) {
   voyage.rocket.visible = voyage.launchTrail.visible = false;
   voyage.lander.visible = false;
+  if (voyage.ground) voyage.ground.visible = false;
+  if (voyage.earthGround) voyage.earthGround.visible = false;
+  if (voyage.launchPad) voyage.launchPad.visible = false;
+  if (voyage.launchSky) voyage.launchSky.visible = false;
   voyage.ellipseFull.visible = voyage.ellipseTrail.visible = false;
   if (voyage.frost) voyage.frost.visible = false;
   if (voyage.base) voyage.base.visible = false;
@@ -1676,6 +1777,10 @@ function updateHelio(ph, u, dt) {
   if (voyage.spentStage) voyage.spentStage.visible = false;
   if (voyage.frost) voyage.frost.visible = false;
   if (voyage.dust) voyage.dust.visible = false;
+  if (voyage.earthGround) voyage.earthGround.visible = false;
+  if (voyage.launchPad) voyage.launchPad.visible = false;
+  if (voyage.launchSky) voyage.launchSky.visible = false;
+  if (earthSats) earthSats.visible = true;
   const isSurface = ph.key === 'surface';
   voyage.ellipseFull.visible = voyage.ellipseTrail.visible = !isSurface;
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = true;
@@ -1903,6 +2008,20 @@ function startVoyage() {
     voyage.base = buildMarsBase();                                   // Mars surface colony
     voyage.base.visible = false;
     scene.add(voyage.base);
+    voyage.ground = buildMarsGround();                               // curved Mars ground under the colony
+    voyage.ground.visible = false;
+    scene.add(voyage.ground);
+    voyage.earthGround = buildEarthGround();                         // launch-site ground patch
+    voyage.earthGround.visible = false;
+    scene.add(voyage.earthGround);
+    voyage.launchPad = buildLaunchPad();                             // concrete pad + service gantry
+    voyage.launchPad.position.copy(PAD);
+    voyage.launchPad.quaternion.setFromUnitVectors(UP, LAUNCH_N);
+    voyage.launchPad.visible = false;
+    scene.add(voyage.launchPad);
+    voyage.launchSky = buildLaunchSky();                             // blue daytime sky that fades to space
+    voyage.launchSky.visible = false;
+    scene.add(voyage.launchSky);
     voyage.ellipseFull = buildEllipseLine(240, 0.22, 0x6ff1ff);
     scene.add(voyage.ellipseFull);
     voyage.ellipseTrail = new THREE.Line(
@@ -1945,6 +2064,10 @@ function endVoyage() {
     if (voyage.frost) voyage.frost.visible = false;
     if (voyage.dust) voyage.dust.visible = false;
     if (voyage.base) voyage.base.visible = false;
+    if (voyage.ground) voyage.ground.visible = false;
+    if (voyage.earthGround) voyage.earthGround.visible = false;
+    if (voyage.launchPad) voyage.launchPad.visible = false;
+    if (voyage.launchSky) voyage.launchSky.visible = false;
     if (voyage.spentStage) voyage.spentStage.visible = false;
     if (voyage.station) voyage.station.visible = false;
   }
@@ -1954,6 +2077,8 @@ function endVoyage() {
   document.getElementById('voyage-controls').classList.add('hidden');
   document.getElementById('hud').classList.remove('voyage-on');
   document.querySelectorAll('.sim-stage').forEach(b => b.classList.remove('active'));
+  camera.fov = 55; camera.updateProjectionMatrix();   // reset any per-stage focal length
+  if (earthSats) earthSats.visible = true;
   controls.target.set(0, 0, 0);
   focusOn(null);
 }
