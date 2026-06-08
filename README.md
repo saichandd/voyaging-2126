@@ -43,6 +43,8 @@ show up on reload (ES-module imports otherwise cache aggressively).
 
 - [Three.js](https://threejs.org/) r0.160 (via unpkg import map) — WebGL, custom
   shader materials, sprites, `EffectComposer` + `UnrealBloom` post-processing,
-  `OrbitControls`.
-- Procedural planets, starfield, asteroid belt, and all spacecraft built from
-  primitives. No external assets.
+  HDRI image-based lighting (PMREM), `OrbitControls`.
+- Planets, Sun, sky, and reflections render from real texture maps; spacecraft, the
+  colony, the asteroid belt, and all surface detail maps (panel normals, window
+  grids) are still built procedurally from primitives. Texture credits and licenses:
+  [ATTRIBUTION.md](ATTRIBUTION.md).
