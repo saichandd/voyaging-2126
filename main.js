@@ -902,7 +902,7 @@ function voyageStats(s) {
 // docks to the Endurance for the cruise, then undocks and lands on Mars. Nose +Z.
 function buildLiner() {
   const g = new THREE.Group();
-  const hull = new THREE.MeshStandardMaterial({ color: 0xc8d2de, metalness: 0.85, roughness: 0.35, emissive: 0x22343f, emissiveIntensity: 0.5 });
+  const hull = new THREE.MeshPhysicalMaterial({ color: 0xc8d2de, metalness: 0.8, roughness: 0.3, clearcoat: 1.0, clearcoatRoughness: 0.15, emissive: 0x22343f, emissiveIntensity: 0.45 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x2e3742, metalness: 0.8, roughness: 0.5 });
   const glowC = new THREE.MeshBasicMaterial({ color: 0x6ff1ff });
 
@@ -968,7 +968,7 @@ function buildLiner() {
 // spine (artificial gravity for the long cruise). Spin axis = local +Z (travel axis).
 function buildEndurance() {
   const g = new THREE.Group();
-  const hull = new THREE.MeshStandardMaterial({ color: 0xdfe5ec, metalness: 0.7, roughness: 0.4, emissive: 0x2a3340, emissiveIntensity: 0.35 });
+  const hull = new THREE.MeshPhysicalMaterial({ color: 0xdfe5ec, metalness: 0.65, roughness: 0.3, clearcoat: 1.0, clearcoatRoughness: 0.15, emissive: 0x2a3340, emissiveIntensity: 0.3 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x3a424e, metalness: 0.7, roughness: 0.5 });
   const warm = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
   const cyan = new THREE.MeshBasicMaterial({ color: 0x6ff1ff });
@@ -1045,7 +1045,7 @@ const launchCurve = new THREE.CatmullRomCurve3([
 // capsule, with a layered exhaust flame. Parts stored in userData.
 function buildRocket() {
   const g = new THREE.Group();
-  const body = new THREE.MeshStandardMaterial({ color: 0xe6ecf2, metalness: 0.45, roughness: 0.45, emissive: 0x1c2636, emissiveIntensity: 0.35 });
+  const body = new THREE.MeshPhysicalMaterial({ color: 0xe6ecf2, metalness: 0.5, roughness: 0.36, clearcoat: 1.0, clearcoatRoughness: 0.18, emissive: 0x1c2636, emissiveIntensity: 0.3 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x39424f, metalness: 0.7, roughness: 0.4 });
   const black = new THREE.MeshStandardMaterial({ color: 0x15181d, metalness: 0.6, roughness: 0.55 });
   const cyan = new THREE.MeshBasicMaterial({ color: 0x6ff1ff });
@@ -1101,7 +1101,7 @@ function buildRocket() {
 // space as it tumbles back down toward Earth after staging. Scaled to match buildRocket.
 function buildSpentStage() {
   const g = new THREE.Group();
-  const body = new THREE.MeshStandardMaterial({ color: 0xe6ecf2, metalness: 0.45, roughness: 0.45, emissive: 0x1c2636, emissiveIntensity: 0.35 });
+  const body = new THREE.MeshPhysicalMaterial({ color: 0xe6ecf2, metalness: 0.5, roughness: 0.36, clearcoat: 1.0, clearcoatRoughness: 0.18, emissive: 0x1c2636, emissiveIntensity: 0.3 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x39424f, metalness: 0.7, roughness: 0.4 });
   const black = new THREE.MeshStandardMaterial({ color: 0x15181d, metalness: 0.6, roughness: 0.55 });
   const s1 = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 3.0, 24), body); s1.position.y = -1.0; g.add(s1);
@@ -1865,6 +1865,20 @@ function startVoyage() {
       new THREE.LineBasicMaterial({ color: 0xb8f8ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })
     );
     scene.add(voyage.ellipseTrail);
+
+    // Pixar pass: trim IBL reflection strength so space stays moody, and enable soft
+    // self-shadows on the solid craft (skip additive/transparent flames + glass).
+    [voyage.ship, voyage.rocket, voyage.spentStage, voyage.station, voyage.base].forEach(o => {
+      if (!o) return;
+      setEnvIntensity(o, 0.32);
+      o.traverse(m => {
+        if (!m.isMesh) return;
+        const mat = m.material;
+        const soft = mat && (mat.blending === THREE.AdditiveBlending || mat.transparent === true);
+        m.castShadow = !soft;
+        m.receiveShadow = !soft;
+      });
+    });
   }
   planetMeshes.earth.orbitGroup.rotation.y = -EARTH_ANGLE;
 
