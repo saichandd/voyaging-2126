@@ -174,16 +174,16 @@ function buildStarfield(count, radius) {
     const c = new THREE.Color();
     const v = Math.random();
     // Realistic stellar colours: mostly white / blue-white, some warm.
-    if (v < 0.7)      c.setHSL(0.58, 0.10, 0.78 + Math.random() * 0.22);
+    if (v < 0.7) c.setHSL(0.58, 0.10, 0.78 + Math.random() * 0.22);
     else if (v < 0.9) c.setHSL(0.13, 0.28, 0.75 + Math.random() * 0.2);
-    else              c.setHSL(0.07, 0.45, 0.7);
+    else c.setHSL(0.07, 0.45, 0.7);
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
   }
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   const mat = new THREE.PointsMaterial({
-    size: 1.6, vertexColors: true, sizeAttenuation: false,
-    transparent: true, opacity: 0.95,
+    size: 1.3, vertexColors: true, sizeAttenuation: false,
+    transparent: true, opacity: 0.8,
     map: radialTexture(['rgba(255,255,255,1)', 'rgba(255,255,255,0.4)', 'rgba(255,255,255,0)'], 64),
     blending: THREE.AdditiveBlending, depthWrite: false,
   });
@@ -191,6 +191,51 @@ function buildStarfield(count, radius) {
 }
 
 scene.add(buildStarfield(9000, 3000));
+
+// ------------------------------------------------------------
+// Milky Way background dome — a canvas-painted equirectangular galaxy (deep base +
+// soft nebula clouds + a bright galactic band + thousands of baked stars). Replaces
+// the empty black void so every shot has depth. Drawn once; zero external files.
+// ------------------------------------------------------------
+function makeGalaxyTexture(w = 2048, h = 1024) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  x.fillStyle = '#02030a'; x.fillRect(0, 0, w, h);
+  x.globalCompositeOperation = 'lighter';
+  const nebCols = ['rgba(40,60,120,0.10)', 'rgba(90,40,110,0.08)', 'rgba(30,90,110,0.08)', 'rgba(120,70,40,0.06)'];
+  for (let i = 0; i < 24; i++) {
+    const cx = Math.random() * w, cy = h * (0.30 + Math.random() * 0.4), r = 120 + Math.random() * 380;
+    const g = x.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, nebCols[i % nebCols.length]); g.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(cx, cy, r, 0, TAU); x.fill();
+  }
+  // bright milky galactic band across the middle
+  const band = x.createLinearGradient(0, h * 0.36, 0, h * 0.64);
+  band.addColorStop(0, 'rgba(0,0,0,0)'); band.addColorStop(0.5, 'rgba(175,185,215,0.13)'); band.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = band; x.fillRect(0, h * 0.36, w, h * 0.28);
+  // stars — dense near the band, sparse elsewhere; varied size + stellar colour
+  for (let i = 0; i < 7000; i++) {
+    const inBand = Math.random() < 0.6;
+    const sx = Math.random() * w;
+    const sy = inBand ? h * (0.42 + Math.random() * 0.16) : Math.random() * h;
+    const r = Math.random() < 0.96 ? Math.random() * 0.5 + 0.25 : Math.random() * 0.8 + 0.7;   // fine dusting
+    const b = 0.4 + Math.random() * 0.45, t = Math.random();
+    x.fillStyle = t < 0.7 ? `rgba(255,255,255,${b})` : t < 0.9 ? `rgba(200,220,255,${b})` : `rgba(255,225,190,${b})`;
+    x.beginPath(); x.arc(sx, sy, r, 0, TAU); x.fill();
+  }
+  x.globalCompositeOperation = 'source-over';
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  return tex;
+}
+const skyDome = new THREE.Mesh(
+  new THREE.SphereGeometry(3600, 64, 32),
+  new THREE.MeshBasicMaterial({ map: makeGalaxyTexture(), side: THREE.BackSide, fog: false, depthWrite: false })
+);
+skyDome.renderOrder = -1;
+scene.add(skyDome);
+scene.background = null;   // the galaxy dome is now the visible backdrop (IBL stays the PMREM space env)
 
 // ============================================================
 // 4. SUN
