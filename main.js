@@ -565,39 +565,55 @@ function makeCloudLayer(radius, color = 0xffffff) {
 // Visual params (size/dist/speed) are compressed for a legible single-screen
 // view; the rows carry the real figures.
 const PLANETS = [
-  { key: 'mercury', name: 'MERCURY', size: 1.1, dist: 28,  speed: 1.6,  spin: 0.10, tilt: 0.05,
+  {
+    key: 'mercury', name: 'MERCURY', size: 1.1, dist: 28, speed: 1.6, spin: 0.10, tilt: 0.05,
     base: 0x8a7a6a, accent: 0x40342a, polar: 0x6a5a4a, scale: 4.5, ridges: true, vel: 47.4,
     desc: 'The smallest planet and closest to the Sun. Airless and cratered, its surface swings from 430°C in daylight to −180°C at night.',
-    rows: [['DIAMETER', '4,879 KM'], ['FROM SUN', '0.39 AU'], ['ORBIT', '88 D'], ['DAY', '176 D'], ['GRAVITY', '0.38 g'], ['MOONS', '0']] },
-  { key: 'venus', name: 'VENUS', size: 1.55, dist: 44, speed: 1.18, spin: -0.04, tilt: 0.02,
+    rows: [['DIAMETER', '4,879 KM'], ['FROM SUN', '0.39 AU'], ['ORBIT', '88 D'], ['DAY', '176 D'], ['GRAVITY', '0.38 g'], ['MOONS', '0']]
+  },
+  {
+    key: 'venus', name: 'VENUS', size: 1.55, dist: 44, speed: 1.18, spin: -0.04, tilt: 0.02,
     base: 0xe8b888, accent: 0x9a5a30, polar: 0xead4a0, scale: 3.5, ridges: false, vel: 35.0,
     desc: 'Earth’s twin in size, wrapped in a crushing carbon-dioxide atmosphere. A runaway greenhouse holds the surface near 465°C.',
-    rows: [['DIAMETER', '12,104 KM'], ['FROM SUN', '0.72 AU'], ['ORBIT', '225 D'], ['DAY', '117 D'], ['GRAVITY', '0.90 g'], ['MOONS', '0']] },
-  { key: 'earth', name: 'EARTH', size: 1.7, dist: 64, speed: 1.0, spin: 0.5, tilt: 0.41,
+    rows: [['DIAMETER', '12,104 KM'], ['FROM SUN', '0.72 AU'], ['ORBIT', '225 D'], ['DAY', '117 D'], ['GRAVITY', '0.90 g'], ['MOONS', '0']]
+  },
+  {
+    key: 'earth', name: 'EARTH', size: 1.7, dist: 64, speed: 1.0, spin: 0.5, tilt: 0.41,
     base: 0x1d6dc8, accent: 0x2a8e54, polar: 0xf2f7ff, scale: 4.0, ridges: false, vel: 29.8,
     desc: 'Our home world and the departure point for the voyage. The only planet known to hold liquid water on its surface.',
-    rows: [['DIAMETER', '12,742 KM'], ['FROM SUN', '1.00 AU'], ['ORBIT', '365 D'], ['DAY', '24 H'], ['GRAVITY', '1.00 g'], ['MOONS', '1']] },
-  { key: 'mars', name: 'MARS', size: 1.32, dist: 88, speed: 0.78, spin: 0.48, tilt: 0.44,
+    rows: [['DIAMETER', '12,742 KM'], ['FROM SUN', '1.00 AU'], ['ORBIT', '365 D'], ['DAY', '24 H'], ['GRAVITY', '1.00 g'], ['MOONS', '1']]
+  },
+  {
+    key: 'mars', name: 'MARS', size: 1.32, dist: 88, speed: 0.78, spin: 0.48, tilt: 0.44,
     base: 0xc44a26, accent: 0x6a2412, polar: 0xf6e0c0, scale: 3.6, ridges: true, vel: 24.1,
     desc: 'The destination — a cold desert world half Earth’s size. Home to Olympus Mons, the tallest volcano in the Solar System.',
-    rows: [['DIAMETER', '6,779 KM'], ['FROM SUN', '1.52 AU'], ['ORBIT', '687 D'], ['DAY', '24.6 H'], ['GRAVITY', '0.38 g'], ['MOONS', '2']] },
-  { key: 'jupiter', name: 'JUPITER', size: 4.6, dist: 150, speed: 0.42, spin: 0.7, tilt: 0.05,
+    rows: [['DIAMETER', '6,779 KM'], ['FROM SUN', '1.52 AU'], ['ORBIT', '687 D'], ['DAY', '24.6 H'], ['GRAVITY', '0.38 g'], ['MOONS', '2']]
+  },
+  {
+    key: 'jupiter', name: 'JUPITER', size: 4.6, dist: 150, speed: 0.42, spin: 0.7, tilt: 0.05,
     base: 0xd8a878, accent: 0x6a3a22, polar: 0xeed8a8, scale: 2.6, ridges: false, banded: true, vel: 13.1,
     desc: 'The largest planet — a gas giant that could swallow over 1,300 Earths. Its Great Red Spot is a storm centuries old.',
-    rows: [['DIAMETER', '139,820 KM'], ['FROM SUN', '5.20 AU'], ['ORBIT', '11.9 Y'], ['DAY', '9.9 H'], ['GRAVITY', '2.53 g'], ['MOONS', '95']] },
-  { key: 'saturn', name: 'SATURN', size: 3.9, dist: 210, speed: 0.30, spin: 0.62, tilt: 0.47,
+    rows: [['DIAMETER', '139,820 KM'], ['FROM SUN', '5.20 AU'], ['ORBIT', '11.9 Y'], ['DAY', '9.9 H'], ['GRAVITY', '2.53 g'], ['MOONS', '95']]
+  },
+  {
+    key: 'saturn', name: 'SATURN', size: 3.9, dist: 210, speed: 0.30, spin: 0.62, tilt: 0.47,
     base: 0xb59868, accent: 0x68502a, polar: 0xc8b48a, scale: 2.4, ridges: false, banded: true, vel: 9.7,
     desc: 'The ringed giant. Its bright ice rings span roughly 280,000 km yet are only tens of metres thick.',
     rows: [['DIAMETER', '116,460 KM'], ['FROM SUN', '9.54 AU'], ['ORBIT', '29.4 Y'], ['DAY', '10.7 H'], ['GRAVITY', '1.07 g'], ['MOONS', '146']],
-    special: 'rings' },
-  { key: 'uranus', name: 'URANUS', size: 2.4, dist: 260, speed: 0.22, spin: 0.4, tilt: 1.71,
+    special: 'rings'
+  },
+  {
+    key: 'uranus', name: 'URANUS', size: 2.4, dist: 260, speed: 0.22, spin: 0.4, tilt: 1.71,
     base: 0x9adde5, accent: 0x3a7a92, polar: 0xc8eef2, scale: 2.2, ridges: false, vel: 6.8,
     desc: 'An ice giant tipped on its side, rolling around the Sun at a 98° tilt. Methane gives it a pale blue-green colour.',
-    rows: [['DIAMETER', '50,724 KM'], ['FROM SUN', '19.2 AU'], ['ORBIT', '84 Y'], ['DAY', '17.2 H'], ['GRAVITY', '0.89 g'], ['MOONS', '28']] },
-  { key: 'neptune', name: 'NEPTUNE', size: 2.35, dist: 305, speed: 0.18, spin: 0.42, tilt: 0.49,
+    rows: [['DIAMETER', '50,724 KM'], ['FROM SUN', '19.2 AU'], ['ORBIT', '84 Y'], ['DAY', '17.2 H'], ['GRAVITY', '0.89 g'], ['MOONS', '28']]
+  },
+  {
+    key: 'neptune', name: 'NEPTUNE', size: 2.35, dist: 305, speed: 0.18, spin: 0.42, tilt: 0.49,
     base: 0x3a6ad8, accent: 0x1a2a78, polar: 0xc0d8f8, scale: 2.4, ridges: false, vel: 5.4,
     desc: 'The most distant planet — a deep-blue ice giant whose winds top 2,000 km/h, the fastest in the Solar System.',
-    rows: [['DIAMETER', '49,244 KM'], ['FROM SUN', '30.1 AU'], ['ORBIT', '165 Y'], ['DAY', '16 H'], ['GRAVITY', '1.14 g'], ['MOONS', '16']] },
+    rows: [['DIAMETER', '49,244 KM'], ['FROM SUN', '30.1 AU'], ['ORBIT', '165 Y'], ['DAY', '16 H'], ['GRAVITY', '1.14 g'], ['MOONS', '16']]
+  },
 ];
 
 const planetMeshes = {};
@@ -884,7 +900,7 @@ function transferState(s) {
   const E = keplerE(M, E_T);
   const r = A_T * (1 - E_T * Math.cos(E));
   const nu = 2 * Math.atan2(Math.sqrt(1 + E_T) * Math.sin(E / 2),
-                            Math.sqrt(1 - E_T) * Math.cos(E / 2));
+    Math.sqrt(1 - E_T) * Math.cos(E / 2));
   const ang = EARTH_ANGLE + nu;
   return { pos: new THREE.Vector3(Math.cos(ang) * r, 0, Math.sin(ang) * r), r, nu };
 }
@@ -976,12 +992,12 @@ function buildEndurance() {
   const ringR = 3.0;
   const ringGrp = new THREE.Group();
   // structural ring (torus in XY, normal +Z)
-  ringGrp.add(new THREE.Mesh(new THREE.TorusGeometry(ringR, 0.09, 10, 60), dark));
+  ringGrp.add(new THREE.Mesh(new THREE.TorusGeometry(ringR, 0.09, 16, 160), dark));
   // 12 habitat modules around the ring, with glowing windows facing +Z
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * TAU;
     const mod = new THREE.Group();
-    mod.add(new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.62, 0.6), i % 2 ? hull : dark));
+    mod.add(new THREE.Mesh(new RoundedBoxGeometry(1.15, 0.62, 0.6, 3, 0.07), i % 2 ? hull : dark));
     const win = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.14, 0.02), i % 3 ? warm : cyan);
     win.position.z = 0.31; mod.add(win);
     mod.position.set(Math.cos(a) * ringR, Math.sin(a) * ringR, 0);
@@ -1163,7 +1179,8 @@ function buildRocket() {
   outer.rotation.x = Math.PI; outer.position.y = -1.2; flameGrp.add(outer);
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({
     map: radialTexture(['rgba(255,225,160,0.95)', 'rgba(255,130,40,0.4)', 'rgba(255,60,20,0)']),
-    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+  }));
   glow.scale.setScalar(1.7); glow.position.y = -0.7; flameGrp.add(glow);
   g.add(flameGrp);
 
@@ -1272,14 +1289,16 @@ function buildLander() {
   // Entry bow-shock cap glowing just ahead of the heat shield (toward Mars).
   const bow = new THREE.Sprite(new THREE.SpriteMaterial({
     map: radialTexture(['rgba(255,252,238,0.98)', 'rgba(255,150,55,0.6)', 'rgba(255,60,20,0)']),
-    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0
+  }));
   bow.scale.setScalar(2.0); bow.position.y = -0.58; g.add(bow);
 
   // Plasma wake streaming behind the capsule (+Y, away from Mars).
   const wake = [];
   for (let i = 0; i < 12; i++) {
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: PUFF_TEX, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+      map: PUFF_TEX, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0
+    }));
     sp.position.y = 0.5 + i * 0.55;
     g.add(sp); wake.push(sp);
   }
@@ -1313,7 +1332,8 @@ function buildLander() {
   }
   const retroGlow = new THREE.Sprite(new THREE.SpriteMaterial({
     map: radialTexture(['rgba(220,244,255,0.95)', 'rgba(90,170,255,0.45)', 'rgba(40,90,200,0)']),
-    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+  }));
   retroGlow.scale.setScalar(2.1); retroGlow.position.y = -0.82; retros.add(retroGlow);
   retros.visible = false; g.add(retros);
 
@@ -1525,7 +1545,7 @@ const voyage = {
 };
 
 const vEls = {};
-['v-phase', 'v-elapsed', 'v-vel', 'v-dist', 'v-engine', 'v-law', 'v-notes', 'vc-tag', 'v-playpause', 'v-progress']
+['v-phase', 'v-elapsed', 'v-vel', 'v-dist', 'v-engine', 'v-notes', 'vc-tag', 'v-playpause', 'v-progress']
   .forEach(id => { vEls[id] = document.getElementById(id); });
 
 function stageIndexForT(t) {
@@ -1540,15 +1560,15 @@ function viewTarget(view, st, s) {
   vel.normalize();
   const up = new THREE.Vector3(0, 1, 0);
   const side = new THREE.Vector3().crossVectors(vel, up).normalize();
-  if (view === 'map')  { const c = new THREE.Vector3(-12, 0, 0); return { pos: c.clone().add(new THREE.Vector3(20, 182, 92)), look: c }; }
+  if (view === 'map') { const c = new THREE.Vector3(-12, 0, 0); return { pos: c.clone().add(new THREE.Vector3(20, 182, 92)), look: c }; }
   if (view === 'ring') { return { pos: ship.clone().addScaledVector(side, 2.3).addScaledVector(up, 0.85).addScaledVector(vel, 0.7), look: ship.clone() }; }
   if (view === 'endurance') {
     // Look mostly down the travel axis from ahead-and-above so the spinning ring
     // reads face-on, with the docked shuttle in the foreground and deep space behind.
     return { pos: ship.clone().addScaledVector(vel, 7.0).addScaledVector(up, 3.0).addScaledVector(side, 2.2), look: ship.clone().addScaledVector(vel, 1.0) };
   }
-  if (view === 'chase'){ return { pos: ship.clone().addScaledVector(vel, -10).addScaledVector(side, 2.2).addScaledVector(up, 4.5), look: ship.clone().addScaledVector(vel, 4) }; }
-  if (view === 'depart'){
+  if (view === 'chase') { return { pos: ship.clone().addScaledVector(vel, -10).addScaledVector(side, 2.2).addScaledVector(up, 4.5), look: ship.clone().addScaledVector(vel, 4) }; }
+  if (view === 'depart') {
     // Side-on staging shot: the separation axis runs across the frame — liner on
     // one side, the spent stage tumbling away on the other, frost shower between.
     const look = ship.clone().addScaledVector(vel, -2.0);
@@ -1765,7 +1785,7 @@ function updateEDL(u) {
   // Camera: 3/4 following the shuttle down, Mars below and the Endurance above early on.
   let camP, lookP;
   if (u < 0.4) { camP = pos.clone().addScaledVector(cross, 4.2).addScaledVector(dir, 1.4).addScaledVector(tang, 1.7); lookP = pos.clone().addScaledVector(velDir, 1.0); }
-  else         { camP = pos.clone().addScaledVector(cross, 2.8).addScaledVector(dir, 1.0).addScaledVector(tang, 0.7); lookP = pos.clone().addScaledVector(dir, -0.4); }
+  else { camP = pos.clone().addScaledVector(cross, 2.8).addScaledVector(dir, 1.0).addScaledVector(tang, 0.7); lookP = pos.clone().addScaledVector(dir, -0.4); }
   return { pos: camP, look: lookP };
 }
 
@@ -1865,7 +1885,6 @@ function updateTelemetry(ph, u, s) {
     voyage.lastStage = voyage.stage;
     vEls['v-phase'].textContent = ph.short;
     vEls['vc-tag'].textContent = ph.tag;
-    vEls['v-law'].textContent = ph.law;
     vEls['v-notes'].innerHTML = ph.facts.map(f => `<div class="note">› ${f}</div>`).join('');
     highlightStage();
   }
