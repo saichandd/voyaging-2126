@@ -12,6 +12,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // ============================================================
@@ -55,7 +56,7 @@ const hdrTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
 });
 const composer = new EffectComposer(renderer, hdrTarget);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.72, 1.0);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.3, 0.5, 1.05);
 composer.addPass(bloom);
 
 // Cinematic grade — edge chromatic aberration + soft vignette + fine film grain.
@@ -90,6 +91,51 @@ const TAU = Math.PI * 2;
 // Shared lighting/scratch constants for the render overhaul.
 const SUN_DIR = new THREE.Vector3(40, 18, 25).normalize();   // env-bake sun direction (IBL highlight)
 const _tmpVec = new THREE.Vector3();
+
+// ---- Texture loading (real photoreal maps live in /textures) ----
+const texLoader = new THREE.TextureLoader();
+const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
+const TEX = 'textures/';
+// srgb:true for colour / emissive / sky maps; default = linear data (normal / roughness / bump).
+function loadTex(url, { srgb = false } = {}) {
+  const t = texLoader.load(TEX + url);
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.anisotropy = MAX_ANISO;
+  return t;
+}
+
+// ---- Procedural surface-detail maps (built once, shared): panel/rivet normal + lit windows ----
+function sobelToNormal(ctx, s, STR = 2.0) {
+  const src = ctx.getImageData(0, 0, s, s).data, out = ctx.createImageData(s, s), d = out.data;
+  const H = (px, py) => src[((((py + s) % s) * s) + ((px + s) % s)) * 4] / 255;
+  for (let py = 0; py < s; py++) for (let px = 0; px < s; px++) {
+    const dx = (H(px + 1, py) - H(px - 1, py)) * STR, dy = (H(px, py + 1) - H(px, py - 1)) * STR;
+    const nx = -dx, ny = -dy, nz = 1, l = Math.hypot(nx, ny, nz), o = (py * s + px) * 4;
+    d[o] = (nx / l * 0.5 + 0.5) * 255; d[o + 1] = (ny / l * 0.5 + 0.5) * 255; d[o + 2] = (nz / l * 0.5 + 0.5) * 255; d[o + 3] = 255;
+  }
+  ctx.putImageData(out, 0, 0);
+  const tex = new THREE.CanvasTexture(ctx.canvas); tex.colorSpace = THREE.NoColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; return tex;
+}
+function panelNormalTexture(s = 1024, cols = 6, rows = 14) {
+  const c = document.createElement('canvas'); c.width = c.height = s; const x = c.getContext('2d');
+  x.fillStyle = '#808080'; x.fillRect(0, 0, s, s);
+  for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) { const v = 122 + (Math.random() * 14 | 0); x.fillStyle = `rgb(${v},${v},${v})`; x.fillRect(i * s / cols, j * s / rows, s / cols, s / rows); }
+  x.strokeStyle = 'rgba(40,40,40,1)'; x.lineWidth = 3;
+  for (let i = 1; i < cols; i++) { x.beginPath(); x.moveTo(i * s / cols, 0); x.lineTo(i * s / cols, s); x.stroke(); }
+  for (let j = 1; j < rows; j++) { x.beginPath(); x.moveTo(0, j * s / rows); x.lineTo(s, j * s / rows); x.stroke(); }
+  x.fillStyle = 'rgba(228,228,228,1)';
+  for (let i = 1; i < cols; i++) for (let j = 0; j < rows * 5; j++) { x.beginPath(); x.arc(i * s / cols, (j / (rows * 5)) * s, 1.7, 0, TAU); x.fill(); }
+  return sobelToNormal(x, s);
+}
+function windowGridTexture(w = 1024, h = 256, cols = 44, rows = 4) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
+  x.fillStyle = '#04060a'; x.fillRect(0, 0, w, h); const cw = w / cols, ch = h / rows, pad = Math.min(cw, ch) * 0.24;
+  for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) { const r = Math.random(); if (r < 0.2) continue; x.globalAlpha = 0.55 + Math.random() * 0.45; x.fillStyle = r < 0.82 ? '#ffd9a0' : '#bfe9ff'; x.fillRect(i * cw + pad, j * ch + pad, cw - 2 * pad, ch - 2 * pad); }
+  x.globalAlpha = 1; const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; return tex;
+}
+const PANEL_N = panelNormalTexture();
+const WIN_TEX = windowGridTexture();
+const winMat = new THREE.MeshStandardMaterial({ color: 0x05070b, roughness: 0.5, metalness: 0.4, emissive: 0xffffff, emissiveMap: WIN_TEX, emissiveIntensity: 3.0 });
 
 function radialTexture(stops, size = 256) {
   const c = document.createElement('canvas'); c.width = c.height = size;
@@ -229,13 +275,11 @@ function makeGalaxyTexture(w = 2048, h = 1024) {
   tex.mapping = THREE.EquirectangularReflectionMapping;
   return tex;
 }
-const skyDome = new THREE.Mesh(
-  new THREE.SphereGeometry(3600, 64, 32),
-  new THREE.MeshBasicMaterial({ map: makeGalaxyTexture(), side: THREE.BackSide, fog: false, depthWrite: false })
-);
-skyDome.renderOrder = -1;
-scene.add(skyDome);
-scene.background = null;   // the galaxy dome is now the visible backdrop (IBL stays the PMREM space env)
+// Real Milky Way as the scene background (equirectangular). IBL stays the PMREM env (independent).
+const skyTex = loadTex('2k_stars_milky_way.jpg', { srgb: true });
+skyTex.mapping = THREE.EquirectangularReflectionMapping;
+scene.background = skyTex;
+scene.backgroundIntensity = 0.5;
 
 // ============================================================
 // 4. SUN
@@ -244,36 +288,10 @@ const sunGroup = new THREE.Group();
 scene.add(sunGroup);
 
 const sunRadius = 9;
-const sunUniforms = { uTime: { value: 0 } };
-const sunMat = new THREE.ShaderMaterial({
-  uniforms: sunUniforms,
-  vertexShader: /* glsl */ `
-    varying vec3 vPosition;
-    varying vec3 vNormal;
-    void main() {
-      vPosition = position;
-      vNormal = normalize(normalMatrix * normal);
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: /* glsl */ `
-    uniform float uTime;
-    varying vec3 vPosition;
-    varying vec3 vNormal;
-    ${NOISE_GLSL}
-    void main() {
-      vec3 p = vPosition * 0.18;
-      float n1 = fbm(p + vec3(uTime * 0.06));
-      float n2 = ridged(p * 1.5 - vec3(uTime * 0.05));
-      float s = mix(n1, n2, 0.5);
-      vec3 col = mix(vec3(0.85, 0.18, 0.02), vec3(1.0, 0.55, 0.12), smoothstep(0.25, 0.6, s));
-      col = mix(col, vec3(1.0, 0.95, 0.72), smoothstep(0.55, 0.95, s * s));
-      float mu = clamp(vNormal.z, 0.0, 1.0);                 // view-space normal → limb
-      col *= (0.55 + 0.45 * pow(mu, 0.6)) * 2.6;             // hot center, dim limb, HDR core for bloom
-      gl_FragColor = vec4(col, 1.0);
-    }
-  `,
-});
+// Real solar photosphere texture, pushed above 1.0 (toneMapped:false) so it stays blinding
+// and feeds the bloom as a true HDR emitter.
+const sunTex = loadTex('2k_sun.jpg', { srgb: true });
+const sunMat = new THREE.MeshBasicMaterial({ map: sunTex, color: new THREE.Color(2.4, 2.1, 1.7), toneMapped: false });
 const sun = new THREE.Mesh(new THREE.SphereGeometry(sunRadius, 96, 96), sunMat);
 sunGroup.add(sun);
 
@@ -315,9 +333,14 @@ function buildSpaceEnvScene() {
   return env;
 }
 const pmrem = new THREE.PMREMGenerator(renderer);
-const envRT = pmrem.fromScene(buildSpaceEnvScene(), 0.25, 0.1, 100);   // soft (sigma 0.25) stylized IBL
-scene.environment = envRT.texture;     // IBL only — do NOT dispose envRT (backs scene.environment)
-pmrem.dispose();
+const envRT = pmrem.fromScene(buildSpaceEnvScene(), 0.25, 0.1, 100);   // placeholder IBL for frame 1
+scene.environment = envRT.texture;
+// Real studio HDRI for image-based reflections (roughness-correct). Keep pmrem alive until it loads.
+new RGBELoader().load(TEX + 'studio_env_2k.hdr', (hdr) => {
+  hdr.mapping = THREE.EquirectangularReflectionMapping;
+  scene.environment = pmrem.fromEquirectangular(hdr).texture;
+  hdr.dispose(); envRT.dispose(); pmrem.dispose();
+});
 
 // Trim per-material env reflection strength so space stays moody (called after craft build).
 function setEnvIntensity(root, intensity) {
@@ -330,12 +353,12 @@ function setEnvIntensity(root, intensity) {
 }
 
 // Warm point fill at the sun (planets read it through their own shaders).
-const sunLight = new THREE.PointLight(0xffd9a8, 1.5, 0, 1.2);
+const sunLight = new THREE.PointLight(0xffd9a8, 0.7, 0, 1.2);
 scene.add(sunLight);
 
 // Directional "sun" key with soft shadows. Re-aimed each voyage frame from the sun
 // (origin) toward the current subject so craft are lit consistently with the planets.
-const sunKey = new THREE.DirectionalLight(0xfff1dc, 2.6);
+const sunKey = new THREE.DirectionalLight(0xfff4e6, 3.2);
 sunKey.position.copy(SUN_DIR).multiplyScalar(200);
 sunKey.castShadow = true;
 sunKey.shadow.mapSize.set(2048, 2048);
@@ -355,10 +378,10 @@ function frameSunShadow(center, radius) {
 }
 
 // Cool rim back-light + sky/ground hemisphere fill so craft separate from the void.
-const rimLight = new THREE.DirectionalLight(0x88b4ff, 0.5);
+const rimLight = new THREE.DirectionalLight(0x88b4ff, 0.3);
 rimLight.position.copy(SUN_DIR).multiplyScalar(-180); rimLight.position.y += 60;
 scene.add(rimLight); scene.add(rimLight.target);
-scene.add(new THREE.HemisphereLight(0x223a5e, 0x05060a, 0.35));
+scene.add(new THREE.HemisphereLight(0x223a5e, 0x05060a, 0.12));   // dim — let IBL carry the ambient
 
 // ============================================================
 // 5. PLANET FACTORY (procedural shader)
@@ -474,8 +497,44 @@ function makePlanetMaterial({ base, accent, polar, scale, ridges = false, banded
 
 // Thin wrappers so the Mars surface ground-cap (Surface Ops) shares the exact same
 // shader as the orbital globe — colours match the PLANETS rows for Earth/Mars.
-function makeEarthMaterial() { return makePlanetMaterial({ base: 0x1d6dc8, accent: 0x2a8e54, polar: 0xf2f7ff, scale: 4.0, variant: 'earth' }); }
-function makeMarsMaterial() { return makePlanetMaterial({ base: 0xc44a26, accent: 0x6a2412, polar: 0xf6e0c0, scale: 3.6, ridges: true, variant: 'mars' }); }
+// Real-texture Earth: day colour + normal + (inverted) specular→roughness + night-side city lights,
+// with a soft day/night terminator driven by a per-frame sun-direction uniform.
+function buildEarthMaterial() {
+  const mat = new THREE.MeshStandardMaterial({
+    map: loadTex('earth_atmos_2048.jpg', { srgb: true }),
+    normalMap: loadTex('earth_normal_2048.jpg'),
+    roughnessMap: loadTex('earth_specular_2048.jpg'),
+    metalness: 0.0, roughness: 1.0,
+    emissive: new THREE.Color(0xffffff),
+    emissiveMap: loadTex('earth_lights_2048.png', { srgb: true }),
+    emissiveIntensity: 1.0,
+    normalScale: new THREE.Vector2(0.8, 0.8),
+    envMapIntensity: 0.2,
+  });
+  const sunDir = { value: new THREE.Vector3().copy(SUN_DIR) };
+  mat.userData.sunDirRef = sunDir;   // animate loop updates this each frame
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uSunDir = sunDir;
+    sh.uniforms.uNight = { value: 2.2 };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\n  varying vec3 vEarthWN;')
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n  vEarthWN = normalize(mat3(modelMatrix) * objectNormal);');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\n  uniform vec3 uSunDir;\n  uniform float uNight;\n  varying vec3 vEarthWN;')
+      .replace('#include <roughnessmap_fragment>',
+        '#include <roughnessmap_fragment>\n  roughnessFactor = mix(0.92, 0.10, texture2D(roughnessMap, vRoughnessMapUv).g);')   // oceans smooth (glint), land rough
+      .replace('#include <emissivemap_fragment>',
+        '#include <emissivemap_fragment>\n  totalEmissiveRadiance *= smoothstep(0.12, -0.25, dot(normalize(vEarthWN), normalize(uSunDir))) * uNight;');   // city lights on the night side only
+  };
+  return mat;
+}
+function buildMarsMaterialReal() {
+  return new THREE.MeshStandardMaterial({
+    map: loadTex('2k_mars.jpg', { srgb: true }),
+    bumpMap: loadTex('2k_mars.jpg'), bumpScale: 0.04,
+    roughness: 1.0, metalness: 0.0, envMapIntensity: 0.15,
+  });
+}
 
 // Atmospheric fresnel shell — FrontSide so we can compute true view-vs-normal
 // fresnel; bright only at the silhouette where dot(N,V) → 0.
@@ -629,12 +688,18 @@ function buildPlanet(p) {
   tiltGroup.position.x = p.dist;
   orbitGroup.add(tiltGroup);
 
-  const mat = makePlanetMaterial({
-    base: p.base, accent: p.accent, polar: p.polar, scale: p.scale,
-    ridges: p.ridges, banded: p.banded,
-    variant: p.key === 'earth' ? 'earth' : (p.key === 'mars' ? 'mars' : null),
-  });
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(p.size, 64, 64), mat);
+  let mat, mesh;
+  if (p.key === 'earth') {
+    mat = buildEarthMaterial();
+    mesh = new THREE.Mesh(new THREE.SphereGeometry(p.size, 96, 96), mat);
+  } else if (p.key === 'mars') {
+    mat = buildMarsMaterialReal();
+    mesh = new THREE.Mesh(new THREE.SphereGeometry(p.size, 96, 96), mat);
+  } else {
+    mat = makePlanetMaterial({ base: p.base, accent: p.accent, polar: p.polar, scale: p.scale, ridges: p.ridges, banded: p.banded });
+    mesh = new THREE.Mesh(new THREE.SphereGeometry(p.size, 64, 64), mat);
+  }
+  mesh.receiveShadow = true;
   tiltGroup.add(mesh);
 
   // Atmosphere for select planets — bright at silhouette, near-transparent at center
@@ -646,9 +711,11 @@ function buildPlanet(p) {
   if (p.key === 'uranus') tiltGroup.add(makeAtmosphere(p.size * 1.10, 0xa0eef0, 0.9));
   if (p.key === 'neptune') tiltGroup.add(makeAtmosphere(p.size * 1.10, 0x6090ff, 1.0));
 
-  // Earth keeps a realistic drifting cloud layer.
+  // Earth: real drifting cloud shell (colour doubles as the alpha mask).
   if (p.key === 'earth') {
-    const clouds = makeCloudLayer(p.size * 1.035, 0xc8d8e8);
+    const cloudTex = loadTex('earth_clouds_2048.png', { srgb: true });
+    const clouds = new THREE.Mesh(new THREE.SphereGeometry(p.size * 1.03, 96, 96),
+      new THREE.MeshStandardMaterial({ map: cloudTex, alphaMap: cloudTex, transparent: true, depthWrite: false, roughness: 1.0, metalness: 0.0 }));
     mesh.add(clouds);
     mesh.userData.clouds = clouds;
   }
@@ -984,7 +1051,7 @@ function buildLiner() {
 // spine (artificial gravity for the long cruise). Spin axis = local +Z (travel axis).
 function buildEndurance() {
   const g = new THREE.Group();
-  const hull = new THREE.MeshPhysicalMaterial({ color: 0xdfe5ec, metalness: 0.65, roughness: 0.3, clearcoat: 1.0, clearcoatRoughness: 0.15, emissive: 0x2a3340, emissiveIntensity: 0.3 });
+  const hull = new THREE.MeshStandardMaterial({ color: 0xdfe5ec, metalness: 0.6, roughness: 0.38, normalMap: PANEL_N, normalScale: new THREE.Vector2(0.5, 0.5), emissive: 0x222a33, emissiveIntensity: 0.12 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x3a424e, metalness: 0.7, roughness: 0.5 });
   const warm = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
   const cyan = new THREE.MeshBasicMaterial({ color: 0x6ff1ff });
@@ -998,7 +1065,7 @@ function buildEndurance() {
     const a = (i / 12) * TAU;
     const mod = new THREE.Group();
     mod.add(new THREE.Mesh(new RoundedBoxGeometry(1.15, 0.62, 0.6, 3, 0.07), i % 2 ? hull : dark));
-    const win = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.14, 0.02), i % 3 ? warm : cyan);
+    const win = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.32), winMat);
     win.position.z = 0.31; mod.add(win);
     mod.position.set(Math.cos(a) * ringR, Math.sin(a) * ringR, 0);
     mod.rotation.z = a + Math.PI / 2;   // long axis → tangent
@@ -1062,7 +1129,11 @@ const LAUNCH_N = new THREE.Vector3(-0.5, 0.55, 0.67).normalize();              /
 const LAUNCH_T1 = new THREE.Vector3().crossVectors(LAUNCH_N, UP).normalize();  // downrange / gravity-turn axis
 const LAUNCH_T2 = new THREE.Vector3().crossVectors(LAUNCH_T1, LAUNCH_N).normalize();
 const PAD = E_POS.clone().addScaledVector(LAUNCH_N, E_R);                       // pad point on Earth's surface
-const LAUNCH_MAXALT = 7.0, LAUNCH_RANGE = 3.0, ROCKET_BASE = 0.5;              // ascent shaping (scene units)
+const LAUNCH_MAXALT = 7.0, LAUNCH_RANGE = 6.0, ROCKET_BASE = 0.5;              // ascent shaping (scene units)
+// Shared launch + EDL event timelines (progress u in [0,1]) so motion, plume, camera
+// and telemetry stay in sync.
+const EV = { hold: 0.04, tower: 0.10, pitch: 0.20, maxQ: 0.32, meco: 0.55, sep: 0.58, ign2: 0.63, fairing: 0.74, tilt: 0.82 };
+const EDL = { ENTRY: 0.16, AERO: 0.42, PITCH: 0.55, BURN: 0.62, TOUCH: 0.965 };
 
 function earthGroundTexture(s = 1024) {
   const c = document.createElement('canvas'); c.width = c.height = s; const x = c.getContext('2d');
@@ -1119,7 +1190,7 @@ function buildLaunchSky() {
         float a = dot(vL, normalize(uUp));
         vec3 c = mix(uHorizon, uZenith, smoothstep(0.0, 0.8, max(a, 0.0)));
         float alpha = uFade * smoothstep(-0.05, 0.25, a);   // fade below the horizon (ground covers it)
-        gl_FragColor = vec4(c, clamp(alpha, 0.0, 1.0) * 0.97);
+        gl_FragColor = vec4(c, clamp(alpha, 0.0, 1.0));
       }`,
   });
   const m = new THREE.Mesh(new THREE.SphereGeometry(36, 32, 16), mat);
@@ -1138,7 +1209,7 @@ const launchCurve = new THREE.CatmullRomCurve3([
 // capsule, with a layered exhaust flame. Parts stored in userData.
 function buildRocket() {
   const g = new THREE.Group();
-  const body = new THREE.MeshPhysicalMaterial({ color: 0xe6ecf2, metalness: 0.5, roughness: 0.36, clearcoat: 1.0, clearcoatRoughness: 0.18, emissive: 0x1c2636, emissiveIntensity: 0.3 });
+  const body = new THREE.MeshStandardMaterial({ color: 0xd9dee3, metalness: 0.6, roughness: 0.44, normalMap: PANEL_N, normalScale: new THREE.Vector2(0.6, 0.6), emissive: 0x141a26, emissiveIntensity: 0.12 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x39424f, metalness: 0.7, roughness: 0.4 });
   const black = new THREE.MeshStandardMaterial({ color: 0x15181d, metalness: 0.6, roughness: 0.55 });
   const cyan = new THREE.MeshBasicMaterial({ color: 0x6ff1ff });
@@ -1165,8 +1236,13 @@ function buildRocket() {
   const inter = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.42, 0.32, 24), dark); inter.position.y = 0.7; upper.add(inter);
   const s2 = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.4, 1.5, 24), body); s2.position.y = 1.65; upper.add(s2);
   const win = new THREE.Mesh(new THREE.TorusGeometry(0.39, 0.04, 8, 24), cyan); win.position.y = 2.0; win.rotation.x = Math.PI / 2; upper.add(win);
-  const fair = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.38, 1.0, 24), body); fair.position.y = 2.95; upper.add(fair);
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.5, 18), body); tip.position.y = 3.7; upper.add(tip);
+  // Payload fairing on its own (cloned) material so it can be faded + jettisoned without
+  // affecting the rest of the body.
+  const fairMat = body.clone();
+  const fairing = new THREE.Group();
+  const fair = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.38, 1.0, 24), fairMat); fair.position.y = 2.95; fairing.add(fair);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.5, 18), fairMat); tip.position.y = 3.7; fairing.add(tip);
+  upper.add(fairing);
   g.add(upper);
 
   // Layered exhaust flame (bright core + outer cone + glow), animated in updateLaunch.
@@ -1186,7 +1262,7 @@ function buildRocket() {
 
   const light = new THREE.PointLight(0xffcaa0, 1.5, 9, 2); light.position.y = -2.6; g.add(light);
 
-  g.userData = { stage1, upper, flameGrp, core, outer, glow, light };
+  g.userData = { stage1, upper, flameGrp, core, outer, glow, light, fairing };
   g.scale.setScalar(0.16);
   return g;
 }
@@ -1195,7 +1271,7 @@ function buildRocket() {
 // space as it tumbles back down toward Earth after staging. Scaled to match buildRocket.
 function buildSpentStage() {
   const g = new THREE.Group();
-  const body = new THREE.MeshPhysicalMaterial({ color: 0xe6ecf2, metalness: 0.5, roughness: 0.36, clearcoat: 1.0, clearcoatRoughness: 0.18, emissive: 0x1c2636, emissiveIntensity: 0.3 });
+  const body = new THREE.MeshStandardMaterial({ color: 0xd9dee3, metalness: 0.6, roughness: 0.44, normalMap: PANEL_N, normalScale: new THREE.Vector2(0.6, 0.6), emissive: 0x141a26, emissiveIntensity: 0.12 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x39424f, metalness: 0.7, roughness: 0.4 });
   const black = new THREE.MeshStandardMaterial({ color: 0x15181d, metalness: 0.6, roughness: 0.55 });
   const s1 = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 3.0, 24), body); s1.position.y = -1.0; g.add(s1);
@@ -1355,93 +1431,148 @@ function buildLander() {
   return g;
 }
 
+// Dusty Mars sky dome for Surface Ops — butterscotch gradient that lightens to a hazy
+// horizon, with a small pale sun disc + glow. Replaces the clear black space on the ground.
+function buildMarsSky() {
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: { uUp: { value: BASE_N.clone() }, uSun: { value: SUN_DIR.clone() }, uHorizon: { value: new THREE.Color(0xc99268) }, uZenith: { value: new THREE.Color(0x7c5240) } },
+    vertexShader: `varying vec3 vL; void main(){ vL = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `uniform vec3 uUp,uSun,uHorizon,uZenith; varying vec3 vL;
+      void main(){
+        float a = clamp(dot(vL, normalize(uUp)), 0.0, 1.0);
+        vec3 c = mix(uHorizon, uZenith, smoothstep(0.0, 0.65, a));
+        float d = max(dot(vL, normalize(uSun)), 0.0);
+        c += vec3(1.0,0.96,0.86) * pow(d, 260.0) * 2.0          // small pale sun disc
+           + uHorizon * pow(d, 8.0) * 0.45                       // forward-scatter glow
+           + uHorizon * smoothstep(0.16, 0.0, a) * 0.4;          // hazy horizon band
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  });
+  const m = new THREE.Mesh(new THREE.SphereGeometry(80, 48, 24), mat);
+  m.renderOrder = -1;
+  return m;
+}
+
 // Mars surface colony (shown in Surface Operations): a landed Starship, pressurised
 // glass domes + habitat modules, solar arrays, a comms dish and a rover — the
 // SpaceX/NASA colony image. Built +Y up; placed + oriented on the surface in updateHelio.
 function buildMarsBase() {
   const g = new THREE.Group();
-  const metal = new THREE.MeshPhysicalMaterial({ color: 0xdfe4ea, metalness: 0.95, roughness: 0.22, clearcoat: 0.6, clearcoatRoughness: 0.2, emissive: 0x2a3340, emissiveIntensity: 0.25 });
-  const white = new THREE.MeshStandardMaterial({ color: 0xe9eef4, metalness: 0.3, roughness: 0.6, emissive: 0x2a3038, emissiveIntensity: 0.35 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x3a4250, metalness: 0.7, roughness: 0.5 });
-  const padMat = new THREE.MeshStandardMaterial({ color: 0x5a4030, metalness: 0.2, roughness: 0.95, emissive: 0x1a0f08, emissiveIntensity: 0.3 });
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0xdff2ff, metalness: 0.0, roughness: 0.08, transmission: 0.92, ior: 1.3, thickness: 0.4, transparent: true, clearcoat: 1.0, clearcoatRoughness: 0.1, emissive: 0x2f6a86, emissiveIntensity: 0.22, side: THREE.DoubleSide });
-  const panelMat = new THREE.MeshStandardMaterial({ color: 0x16245c, metalness: 0.6, roughness: 0.35, emissive: 0x0b1b44, emissiveIntensity: 0.6 });
-  const warm = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
+  const metal = new THREE.MeshStandardMaterial({ color: 0xcfd4da, metalness: 0.85, roughness: 0.36, normalMap: PANEL_N, normalScale: new THREE.Vector2(0.4, 0.4), emissive: 0x242a32, emissiveIntensity: 0.15 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xdee4ec, metalness: 0.3, roughness: 0.6, emissive: 0x222a33, emissiveIntensity: 0.22 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x39414e, metalness: 0.7, roughness: 0.5 });
+  const strut = new THREE.MeshStandardMaterial({ color: 0xaab2bd, metalness: 0.85, roughness: 0.4 });
+  const padMat = new THREE.MeshStandardMaterial({ color: 0x4a3020, metalness: 0.2, roughness: 0.98, emissive: 0x140a05, emissiveIntensity: 0.25 });
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0xdff2ff, metalness: 0.0, roughness: 0.12, transmission: 0.9, ior: 1.25, thickness: 0.4, transparent: true, clearcoat: 1.0, clearcoatRoughness: 0.1, side: THREE.DoubleSide });
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x1a2b6a, metalness: 0.6, roughness: 0.35, emissive: 0x0a1640, emissiveIntensity: 0.5 });
+  const interiorMat = new THREE.MeshStandardMaterial({ color: 0x3a2410, roughness: 1.0, emissive: 0xffb066, emissiveIntensity: 1.3 });   // lit interior: dim body, bright emissive (blooms, doesn't clip white)
+  const suitMat = new THREE.MeshStandardMaterial({ color: 0xeef1f5, roughness: 0.85, metalness: 0.05 });
+  const visorMat = new THREE.MeshStandardMaterial({ color: 0x10141a, metalness: 0.5, roughness: 0.3, emissive: 0x5fd0ff, emissiveIntensity: 0.7 });
+  const warm = new THREE.MeshBasicMaterial({ color: 0xffcaa0 });
   const cyan = new THREE.MeshBasicMaterial({ color: 0x6ff1ff });
+  const glowMats = [interiorMat];
 
-  // Pressurised dome: glass cap + base ring + structural arcs + interior glow.
+  // --- Geodesic pressurised dome: faceted glass + visible strut frame + lit interior glow ---
   function dome(x, z, r) {
     const d = new THREE.Group(); d.position.set(x, 0, z);
-    d.add(new THREE.Mesh(new THREE.SphereGeometry(r, 20, 12, 0, TAU, 0, Math.PI * 0.5), glass));
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.07, 8, 24), white); ring.rotation.x = Math.PI / 2; d.add(ring);
-    for (let i = 0; i < 2; i++) { const arc = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.03, 6, 18, Math.PI), white); arc.rotation.y = i * Math.PI / 2; d.add(arc); }
-    const glow = new THREE.Mesh(new THREE.SphereGeometry(r * 0.5, 10, 8), warm); glow.position.y = r * 0.22; glow.scale.y = 0.5; d.add(glow);
+    const geo = new THREE.IcosahedronGeometry(r, 1);
+    const shell = new THREE.Mesh(geo, glass); shell.scale.y = 0.62; d.add(shell);
+    const frame = new THREE.LineSegments(new THREE.WireframeGeometry(geo), new THREE.LineBasicMaterial({ color: 0xbfe9ff, transparent: true, opacity: 0.4 }));
+    frame.scale.y = 0.62; d.add(frame);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 0.94, r * 0.06, 8, 28), strut); ring.rotation.x = Math.PI / 2; ring.position.y = 0.005; d.add(ring);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(r * 0.55, 12, 8), interiorMat); glow.position.y = r * 0.16; glow.scale.y = 0.5; d.add(glow);
     g.add(d);
   }
   // Horizontal habitat module (capsule) with a lit window stripe.
   function hab(x, z, len, rot) {
-    const h = new THREE.Group(); h.position.set(x, 0.08, z); h.rotation.y = rot;
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, len, 14), white); body.rotation.z = Math.PI / 2; h.add(body);
-    for (const s of [-1, 1]) { const cap = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), white); cap.position.x = s * len / 2; h.add(cap); }
-    const win = new THREE.Mesh(new THREE.BoxGeometry(len * 0.7, 0.025, 0.025), warm); win.position.y = 0.055; h.add(win);
-    g.add(h);
+    const h = new THREE.Group(); h.position.set(x, 0.09, z); h.rotation.y = rot;
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, len, 6, 14), white); body.rotation.z = Math.PI / 2; h.add(body);
+    const win = new THREE.Mesh(new THREE.BoxGeometry(len * 0.7, 0.03, 0.03), warm); win.position.set(0, 0.06, 0.075); h.add(win);
+    g.add(h); return h;
+  }
+  // Upright landed Starship (ogive nose, flaps, window band, splayed legs) on a scorched pad.
+  function ship(x, z, rot) {
+    const s = new THREE.Group(); s.position.set(x, 0, z); s.rotation.y = rot || 0;
+    const H = 0.86, R = 0.092;
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(R * 3.4, R * 3.8, 0.02, 28), padMat); pad.receiveShadow = true; s.add(pad);
+    const hull = new THREE.Mesh(new THREE.CylinderGeometry(R, R, H, 24), metal); hull.position.y = H / 2 + 0.05; hull.castShadow = true; s.add(hull);
+    const npts = []; for (let i = 0; i <= 8; i++) { const t = i / 8; npts.push(new THREE.Vector2(Math.cos(t * Math.PI * 0.5) * R, t * 0.34)); }
+    const nose = new THREE.Mesh(new THREE.LatheGeometry(npts, 24), metal); nose.position.y = H + 0.05; nose.castShadow = true; s.add(nose);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(R * 1.02, R * 1.02, 0.07, 48, 1, true), winMat); band.position.y = H * 0.8; s.add(band);
+    for (const [hy, fh] of [[0.78, 0.16], [0.16, 0.2]]) for (const sz of [1, -1]) {
+      const fl = new THREE.Mesh(new THREE.BoxGeometry(0.02, fh, 0.12), dark); fl.position.set(0, H * hy, sz * R * 1.1); s.add(fl);
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * TAU; const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.24, 5), dark);
+      leg.position.set(Math.cos(a) * R * 1.1, 0.07, Math.sin(a) * R * 1.1);
+      leg.quaternion.setFromUnitVectors(UP, new THREE.Vector3(Math.cos(a) * 0.55, -1, Math.sin(a) * 0.55).normalize()); s.add(leg);
+    }
+    g.add(s); return s;
+  }
+  // Small astronaut figure (built once, cloned) for scale + life.
+  function makeAstronaut() {
+    const a = new THREE.Group();
+    a.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.022, 0.03, 4, 10), suitMat));   // torso (origin ~0.04 up)
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.02, 12, 10), suitMat); head.position.y = 0.06; a.add(head);
+    const visor = new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 8), visorMat); visor.position.set(0, 0.062, 0.012); a.add(visor);
+    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.034, 0.016), dark); pack.position.set(0, 0.03, -0.022); a.add(pack);
+    for (const sx of [1, -1]) { const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.007, 0.05, 6), suitMat); leg.position.set(sx * 0.012, -0.02, 0); a.add(leg); }
+    a.position.y = 0.05;
+    return a;
   }
 
-  // Ground pads.
-  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.025, 28), padMat));
-  const pad2 = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.3, 0.03, 24), padMat); pad2.position.set(0.85, 0, -0.5); g.add(pad2);
+  // Central landing pad + the two ships (hero + the crew ship just flown down).
+  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.02, 28), padMat));
+  ship(0.7, -0.45, 0.4);          // hero
+  ship(-0.55, 0.35, -0.7);        // crew ship you arrived on
 
-  // Landed Starship (hero).
-  const ship = new THREE.Group(); ship.position.set(0.85, 0, -0.5);
-  const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.62, 20), metal); hull.position.y = 0.43; ship.add(hull);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.26, 20), metal); nose.position.y = 0.87; ship.add(nose);
-  const flapT = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.16, 0.1), dark); flapT.position.set(0.1, 0.72, 0); ship.add(flapT);
-  const flapB = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.18, 0.12), dark); flapB.position.set(-0.1, 0.2, 0); ship.add(flapB);
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.101, 0.101, 0.03, 20), warm); band.position.y = 0.66; ship.add(band);
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * TAU + 0.5;
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.28, 6), dark);
-    leg.position.set(Math.cos(a) * 0.12, 0.1, Math.sin(a) * 0.12);
-    leg.quaternion.setFromUnitVectors(UP, new THREE.Vector3(Math.cos(a) * 0.7, -1, Math.sin(a) * 0.7).normalize());
-    ship.add(leg);
-  }
-  g.add(ship);
+  // Geodesic domes (a settlement cluster) + a greenhouse tint dome.
+  dome(-0.05, 0.18, 0.22); dome(0.28, 0.38, 0.16); dome(-0.42, -0.05, 0.15);
 
-  // Domes + habitat modules.
-  dome(-0.18, 0.12, 0.2); dome(0.2, 0.32, 0.15); dome(-0.55, -0.12, 0.13);
-  hab(-0.08, -0.26, 0.4, 0.5); hab(0.36, -0.04, 0.3, 1.4);
+  // Habitat capsules + a connecting tube between two of them.
+  const h1 = hab(0.0, -0.28, 0.34, 0.4), h2 = hab(0.34, -0.12, 0.28, 1.3);
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.34, 10), white);
+  tube.position.copy(h1.position).lerp(h2.position, 0.5); tube.position.y = 0.09;
+  tube.quaternion.setFromUnitVectors(UP, h2.position.clone().sub(h1.position).setY(0).normalize()); g.add(tube);
 
-  // Solar arrays.
-  for (let i = 0; i < 3; i++) {
-    const arr = new THREE.Group(); arr.position.set(-0.72, 0.12, 0.35 + i * 0.22);
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.12, 6), dark); post.position.y = -0.06; arr.add(post);
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.006, 0.18), panelMat); panel.rotation.x = -0.5; arr.add(panel);
+  // Solar farm — rows of tilted panels.
+  for (let r = 0; r < 2; r++) for (let c = 0; c < 5; c++) {
+    const arr = new THREE.Group(); arr.position.set(-0.95 + c * 0.2, 0.08, 0.45 + r * 0.22);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.1, 6), dark); post.position.y = -0.05; arr.add(post);
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.006, 0.13), panelMat); panel.rotation.x = -0.5; arr.add(panel);
     g.add(arr);
   }
 
-  // Comms dish on a mast.
-  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.34, 6), dark); mast.position.set(0.5, 0.17, 0.45); g.add(mast);
-  const dish = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 8, 0, TAU, 0, Math.PI * 0.4), white); dish.position.set(0.5, 0.34, 0.45); dish.rotation.set(-0.8, 0, 0.3); g.add(dish);
+  // Comms dish, storage tanks, antenna mast.
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.34, 6), dark); mast.position.set(0.62, 0.17, 0.5); g.add(mast);
+  const dish = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 8, 0, TAU, 0, Math.PI * 0.42), white); dish.position.set(0.62, 0.34, 0.5); dish.rotation.set(-0.8, 0, 0.3); g.add(dish);
+  for (let i = 0; i < 2; i++) { const tank = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.12, 6, 14), white); tank.position.set(-0.78 + i * 0.16, 0.12, -0.4); g.add(tank); }
 
-  // Rover.
-  const rover = new THREE.Group(); rover.position.set(-0.42, 0.04, 0.52);
-  const rbody = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.09), white); rbody.position.y = 0.04; rover.add(rbody);
-  for (let i = 0; i < 4; i++) {
-    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.02, 10), dark); w.rotation.x = Math.PI / 2;
-    w.position.set(i < 2 ? 0.06 : -0.06, 0.025, i % 2 ? 0.05 : -0.05); rover.add(w);
-  }
+  // Rover with a short dirt track behind it.
+  const rover = new THREE.Group(); rover.position.set(-0.3, 0.04, 0.5);
+  rover.add(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.09), white));
+  for (let i = 0; i < 4; i++) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.02, 10), dark); w.rotation.x = Math.PI / 2; w.position.set(i < 2 ? 0.06 : -0.06, -0.02, i % 2 ? 0.05 : -0.05); rover.add(w); }
   g.add(rover);
+  const track = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.4), new THREE.MeshStandardMaterial({ color: 0x3a2414, roughness: 1, transparent: true, opacity: 0.55, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, depthWrite: false }));
+  track.rotation.x = -Math.PI / 2; track.position.set(-0.42, 0.012, 0.62); track.rotation.z = 0.5; g.add(track);
 
-  // Scattered window / path lights for "life".
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * TAU, r = 0.32 + (i % 3) * 0.1;
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.013, 6, 6), i % 2 ? warm : cyan);
-    dot.position.set(Math.cos(a) * r, 0.02, Math.sin(a) * r); g.add(dot);
-  }
+  // Astronauts (cloned) for life + scale.
+  const astro = makeAstronaut();
+  [[0.32, 0.05], [0.18, -0.12], [-0.12, 0.42], [0.5, 0.2]].forEach(([ax, az]) => { const a = astro.clone(); a.position.set(ax, 0.05, az); g.add(a); });
 
-  // Local fill so the colony reads even on Mars's shadowed side.
-  const fill = new THREE.PointLight(0xffe0c0, 0.9, 7, 2); fill.position.set(0, 1.3, 0.6); g.add(fill);
+  // Flag.
+  const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.26, 6), strut); flagPole.position.set(0.1, 0.13, 0.4); g.add(flagPole);
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.075), new THREE.MeshStandardMaterial({ color: 0xc8443a, roughness: 0.9, side: THREE.DoubleSide, emissive: 0x3a0a08, emissiveIntensity: 0.3 }));
+  flag.position.set(0.165, 0.22, 0.4); g.add(flag);
 
+  // Perimeter / path lights.
+  for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU, r = 0.5 + (i % 3) * 0.06; const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 6), i % 2 ? warm : cyan); dot.position.set(Math.cos(a) * r, 0.02, Math.sin(a) * r); g.add(dot); }
+
+  // Warm "golden hour" fill so the base reads even on Mars's shadowed side.
+  const fill = new THREE.PointLight(0xffce96, 2.2, 9, 2); fill.position.set(0.0, 1.4, 0.3); g.add(fill);
+
+  g.userData = { glowMats, flag };
   g.scale.setScalar(0.5);
   return g;
 }
@@ -1540,7 +1671,7 @@ const TOTAL_DUR = _acc;
 const voyage = {
   active: false, playing: false, t: 0, total: TOTAL_DUR, stage: 0, lastStage: -1,
   manualView: null, ship: null, rocket: null, ellipseFull: null, ellipseTrail: null,
-  camPos: new THREE.Vector3(), camLook: new THREE.Vector3(), camInit: false,
+  camPos: new THREE.Vector3(), camLook: new THREE.Vector3(), camUp: new THREE.Vector3(0, 1, 0), camInit: false,
   lastHighlight: null,
 };
 
@@ -1561,6 +1692,17 @@ function viewTarget(view, st, s) {
   const up = new THREE.Vector3(0, 1, 0);
   const side = new THREE.Vector3().crossVectors(vel, up).normalize();
   if (view === 'map') { const c = new THREE.Vector3(-12, 0, 0); return { pos: c.clone().add(new THREE.Vector3(20, 182, 92)), look: c }; }
+  if (view === 'approach') {
+    // Zoom onto Mars from just behind/above the ship so the planet grows from a dot into
+    // a disc as the ship closes in; the station + docked shuttle read small in the foreground.
+    const mars = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(mars);
+    const toMars = mars.clone().sub(ship); const dist = Math.max(0.001, toMars.length());
+    toMars.normalize();
+    const sideM = new THREE.Vector3().crossVectors(toMars, up).normalize();
+    if (sideM.lengthSq() < 1e-4) sideM.set(1, 0, 0);
+    const pos = ship.clone().addScaledVector(toMars, -3.4).addScaledVector(up, 1.5).addScaledVector(sideM, 3.0);
+    return { pos, look: mars, fov: 40 };
+  }
   if (view === 'ring') { return { pos: ship.clone().addScaledVector(side, 2.3).addScaledVector(up, 0.85).addScaledVector(vel, 0.7), look: ship.clone() }; }
   if (view === 'endurance') {
     // Look mostly down the travel axis from ahead-and-above so the spinning ring
@@ -1584,9 +1726,11 @@ function viewTarget(view, st, s) {
     const B = m.clone().addScaledVector(BASE_N, mR * 1.002);          // the colony's ground point
     const t1 = new THREE.Vector3().crossVectors(BASE_N, UP).normalize();
     const t2 = new THREE.Vector3().crossVectors(t1, BASE_N).normalize();
-    const pos = B.clone().addScaledVector(BASE_N, 0.85).addScaledVector(t1, -1.6).addScaledVector(t2, 1.05);
-    const look = B.clone().addScaledVector(BASE_N, 0.12).addScaledVector(t1, 0.15);
-    return { pos, look, fov: 46 };
+    const drift = Math.sin(elapsed * 0.12) * 0.22;                    // slow cinematic orbit
+    const back = t1.clone().multiplyScalar(-1.7).applyAxisAngle(BASE_N, drift);
+    const pos = B.clone().addScaledVector(BASE_N, 0.8).add(back).addScaledVector(t2, 1.0);
+    const look = B.clone().addScaledVector(BASE_N, 0.16).addScaledVector(t1, 0.15);
+    return { pos, look, fov: 44, up: BASE_N };                        // up = surface normal so it reads level
   }
   const mars = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(mars);
   return { pos: ship.clone().addScaledVector(vel, -10).addScaledVector(up, 5).addScaledVector(side, 6), look: mars };
@@ -1602,6 +1746,7 @@ function updateLaunch(u) {
   if (voyage.station) voyage.station.visible = false;
   voyage.rocket.visible = voyage.launchTrail.visible = true;
   if (voyage.earthGround) voyage.earthGround.visible = true;
+  if (voyage.marsSky) voyage.marsSky.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = true;
   if (voyage.launchSky) voyage.launchSky.visible = true;
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = (key === 'earth');
@@ -1610,88 +1755,143 @@ function updateLaunch(u) {
   orbitPaths.forEach(o => { o.visible = false; });    // no orbit rings during the ground launch
 
   const rd = voyage.rocket.userData;
-  const sepU = 0.6;                                   // first-stage separation (MECO)
-  const staged = u >= sepU;
-  rd.flameGrp.visible = true;
+  const staged = u >= EV.sep;
   rd.upper.visible = true;
   rd.stage1.visible = !staged;
   if (!staged) { rd.stage1.position.set(0, 0, 0); rd.stage1.rotation.set(0, 0, 0); }
 
-  // Ascent: barely moves off the pad, then accelerates (altitude ~ u^1.9); gravity-turn
-  // downrange only after liftoff. Nose points along the flight-path tangent.
-  const altOf = (t) => LAUNCH_MAXALT * Math.pow(t, 1.9);
-  const rngOf = (t) => LAUNCH_RANGE * Math.pow(clamp01((t - 0.16) / 0.84), 1.5);
+  // Physics-shaped ascent: a brief hold, dead-vertical climb, then a gravity turn downrange.
+  const altOf = (t) => {
+    if (t < EV.hold) return 0.0;
+    const climb = THREE.MathUtils.smoothstep(t, EV.hold, EV.meco);
+    const coast = THREE.MathUtils.smoothstep(t, EV.meco, 1.0);
+    return LAUNCH_MAXALT * (0.8 * Math.pow(climb, 1.3) + 0.2 * coast);
+  };
+  const rngOf = (t) => LAUNCH_RANGE * Math.pow(clamp01((t - EV.pitch) / (1 - EV.pitch)), 1.7);
   const sitePos = (t) => PAD.clone().addScaledVector(LAUNCH_N, altOf(t) + ROCKET_BASE).addScaledVector(LAUNCH_T1, rngOf(t));
   const pos = sitePos(u);
-  const vel = sitePos(Math.min(1, u + 0.008)).sub(pos);
+  const vel = sitePos(Math.min(1, u + 0.01)).sub(pos);
   if (vel.lengthSq() < 1e-8) vel.copy(LAUNCH_N);
   vel.normalize();
   voyage.rocket.position.copy(pos);
-  voyage.rocket.quaternion.setFromUnitVectors(UP, vel);
+  // Attitude: locked vertical off the pad, then slerp to the flight-path tangent; a small
+  // roll program just after tower-clear that fades out.
+  const qVert = new THREE.Quaternion().setFromUnitVectors(UP, LAUNCH_N);
+  const qPath = new THREE.Quaternion().setFromUnitVectors(UP, vel);
+  voyage.rocket.quaternion.copy(qVert).slerp(qPath, THREE.MathUtils.smoothstep(u, EV.tower, EV.tilt));
+  voyage.rocket.rotateY((1 - clamp01((u - EV.tower) / 0.22)) * 0.5 * Math.sin(elapsed * 1.1));
 
-  // Flame
+  // Air-pressure proxy (drops with altitude) drives plume shape + sky fade.
+  const alt = altOf(u);
+  const H = LAUNCH_MAXALT * 0.42, atmP = Math.exp(-alt / H);
+  const throttle = 1 - 0.34 * Math.exp(-Math.pow((u - EV.maxQ) / 0.06, 2));   // max-Q throttle-down
   const flick = 0.85 + Math.sin(elapsed * 42) * 0.15;
-  if (staged) {
-    rd.flameGrp.position.y = 0.45;
-    rd.flameGrp.scale.set(flick * 0.55, (0.8 + (u - sepU) * 0.5) * flick, flick * 0.55);
-  } else {
+  rd.flameGrp.visible = !staged || u >= EV.ign2;     // dark coast between MECO and 2nd-stage ignition
+  if (!staged) {
     rd.flameGrp.position.y = -3.0;
-    rd.flameGrp.scale.set(flick, (1.1 + u * 0.7) * flick, flick);
+    const bloom = 1 + (1 - atmP) * 1.8;              // plume balloons wide in near-vacuum
+    rd.core.scale.set(flick * (0.9 + 0.1 * atmP), throttle * (1.4 + u * 0.7) * flick, flick * (0.9 + 0.1 * atmP));
+    rd.outer.scale.set(flick * bloom, throttle * (1.0 + (1 - atmP) * 0.9) * flick, flick * bloom);
+    rd.outer.material.opacity = 0.6 * (0.3 + 0.7 * atmP);
+    rd.core.material.opacity = 0.95;
+  } else {
+    rd.flameGrp.position.y = 0.45;
+    const s2 = clamp01((u - EV.ign2) / 0.1);          // second-stage spin-up
+    rd.core.scale.set(flick * 0.5 * s2, (0.7 + (u - EV.ign2)) * flick * s2, flick * 0.5 * s2);
+    rd.outer.scale.set(flick * 2.4 * s2, 0.9 * flick * s2, flick * 2.4 * s2);   // vacuum bell bloom
+    rd.outer.material.opacity = 0.28 * s2;
+    rd.core.material.opacity = 0.85 * s2;
   }
-  rd.glow.scale.setScalar((staged ? 0.9 : 1.7) + Math.sin(elapsed * 26) * 0.25);
-  rd.light.intensity = 1.5 + Math.sin(elapsed * 40) * 0.4;
+  rd.glow.scale.setScalar((staged ? 0.8 : 1.6 * (0.6 + 0.4 * atmP)) + Math.sin(elapsed * 26) * 0.25);
+  rd.light.intensity = (staged ? 1.0 : 1.5 * throttle) + Math.sin(elapsed * 40) * 0.4;
 
-  // Spent first stage falls back toward Earth (down the surface normal) after MECO.
+  // Max-Q condensation cone.
+  if (voyage.vaporCone) {
+    const q = Math.exp(-Math.pow((u - EV.maxQ) / 0.05, 2));
+    voyage.vaporCone.visible = q > 0.02 && !staged;
+    voyage.vaporCone.material.opacity = 0.8 * q;
+    voyage.vaporCone.scale.setScalar(0.6 + 0.7 * q);
+    voyage.vaporCone.position.copy(pos).addScaledVector(vel, 0.1);
+  }
+
+  // Fairing jettison after second-stage ignition.
+  if (rd.fairing) {
+    const fj = clamp01((u - EV.fairing) / 0.09);
+    rd.fairing.position.x = fj * 0.6;
+    rd.fairing.rotation.z = -fj * 1.4;
+    rd.fairing.visible = fj < 0.999;
+    rd.fairing.traverse(o => { if (o.material && 'opacity' in o.material) { o.material.transparent = true; o.material.opacity = 1 - fj; } });
+  }
+
+  // Spent first stage tumbles back toward Earth + an entry/retro glow; ullage frost burst.
   if (voyage.spentStage) {
     voyage.spentStage.visible = staged;
     if (staged) {
-      const sepPos = sitePos(sepU);
-      const fall = (u - sepU) / (1 - sepU);
+      const sepPos = sitePos(EV.sep);
+      const fall = (u - EV.sep) / (1 - EV.sep);
       voyage.spentStage.position.copy(sepPos)
-        .addScaledVector(vel, fall * 1.0)
-        .addScaledVector(LAUNCH_N, -(fall * fall) * 5.0)
-        .addScaledVector(LAUNCH_T1, fall * 0.6);
+        .addScaledVector(vel, fall * 0.8)
+        .addScaledVector(LAUNCH_N, -(fall * fall) * 6.0)
+        .addScaledVector(LAUNCH_T1, fall * 0.5);
       voyage.spentStage.quaternion.setFromUnitVectors(UP, LAUNCH_N);
-      voyage.spentStage.rotateX(fall * 4.0);
-      voyage.spentStage.rotateZ(fall * 2.2);
+      voyage.spentStage.rotateX(fall * 4.0); voyage.spentStage.rotateZ(fall * 2.2);
+      if (voyage.boosterGlow) {
+        voyage.boosterGlow.visible = fall > 0.18;
+        voyage.boosterGlow.position.copy(voyage.spentStage.position).addScaledVector(LAUNCH_N, -0.08);
+        voyage.boosterGlow.material.opacity = clamp01(fall - 0.18) * 0.8;
+        voyage.boosterGlow.scale.setScalar(0.4 + fall * 0.7);
+      }
+      if (voyage.frost) {
+        const burst = clamp01((u - EV.sep) / 0.06);
+        voyage.frost.visible = burst > 0 && burst < 1;
+        voyage.frost.userData.parts.forEach(p => {
+          p.position.copy(sepPos).addScaledVector(p.userData.dir, burst * p.userData.speed * 1.1);
+          p.material.opacity = (1 - burst) * 0.7; p.scale.setScalar(p.userData.size * (1 + burst));
+        });
+      }
+    } else {
+      if (voyage.boosterGlow) voyage.boosterGlow.visible = false;
+      if (voyage.frost) voyage.frost.visible = false;
     }
   }
 
-  // Exhaust/smoke column from the pad up to the engines (thick + bright near the ground,
-  // thinning with altitude and after staging).
-  const alt = altOf(u), rng = rngOf(u);
+  // Exhaust/smoke: a dense column near the pad that lingers as the rocket climbs away.
+  const rng = rngOf(u);
+  const colTop = Math.min(alt + ROCKET_BASE, 3.2);
+  const colFrac = colTop / Math.max(0.001, alt + ROCKET_BASE);
   const puffs = voyage.launchTrail.userData.puffs;
   puffs.forEach((sp, i) => {
-    const f = i / (puffs.length - 1);                  // 0 = pad, 1 = engines
-    sp.position.copy(PAD).addScaledVector(LAUNCH_N, (alt + ROCKET_BASE) * f).addScaledVector(LAUNCH_T1, rng * f);
+    const f = i / (puffs.length - 1);
+    sp.position.copy(PAD).addScaledVector(LAUNCH_N, colTop * f).addScaledVector(LAUNCH_T1, rng * colFrac * f);
     const heat = f * f;
     sp.material.color.setRGB(1, 0.55 + heat * 0.4, 0.42 + heat * 0.35);
-    sp.material.opacity = (0.18 + (1 - f) * 0.5) * (0.5 + u * 0.5) * (staged ? 0.35 : 1) * clamp01(1.6 - alt * 0.16);
-    sp.scale.setScalar(0.45 + (1 - f) * 1.2);
+    sp.material.opacity = (0.2 + (1 - f) * 0.5) * (0.5 + u * 0.5) * (staged ? 0.3 : 1) * clamp01(1.5 - alt * 0.18);
+    sp.scale.setScalar(0.5 + (1 - f) * 1.2);
   });
 
-  // Sky fades out as the vehicle climbs out of the atmosphere.
+  // Sky fades to space with the thinning atmosphere.
   if (voyage.launchSky) {
-    const fade = clamp01(1 - alt / (LAUNCH_MAXALT * 0.55));
-    voyage.launchSky.material.uniforms.uFade.value = fade;
-    voyage.launchSky.visible = fade > 0.01;
+    voyage.launchSky.material.uniforms.uFade.value = clamp01(Math.pow(atmP, 0.6));
+    voyage.launchSky.visible = atmP > 0.02;
   }
 
-  // Camera: low pad-level looking up → tracking the climb → pull back to Earth + space.
+  // Camera: broadcast beats — pad cam -> downrange tracking -> onboard -> pull-back reveal.
   const up = LAUNCH_N, side = LAUNCH_T2, fwd = LAUNCH_T1;
-  let camP, lookP;
-  if (u < 0.22) {
-    const k = clamp01(u / 0.22);
-    camP = PAD.clone().addScaledVector(up, 0.5 + k * 0.7).addScaledVector(side, 3.1).addScaledVector(fwd, -0.7);
-    lookP = pos.clone().addScaledVector(up, 0.35);
-  } else if (u < sepU) {
-    camP = pos.clone().addScaledVector(side, 3.0).addScaledVector(up, -0.3).addScaledVector(fwd, -1.4);
-    lookP = pos.clone().addScaledVector(vel, 1.0);
-  } else {
-    camP = pos.clone().addScaledVector(side, 5.8).addScaledVector(up, 2.2).addScaledVector(fwd, -3.2);
-    lookP = pos.clone();
+  let camP, lookP, fov = 50;
+  if (u < EV.pitch) {                          // anchored pad cam (ground stays in frame)
+    camP = PAD.clone().addScaledVector(up, 0.7).addScaledVector(side, 3.0).addScaledVector(fwd, -0.8);
+    lookP = pos.clone().addScaledVector(up, 0.1); fov = 48;
+  } else if (u < EV.sep) {                     // downrange tracking pedestal
+    camP = pos.clone().addScaledVector(side, 3.2).addScaledVector(up, 0.3).addScaledVector(fwd, -1.6);
+    lookP = pos.clone().addScaledVector(vel, 1.0); fov = 42;
+  } else if (u < EV.fairing) {                 // onboard-ish, looking back down at Earth
+    camP = pos.clone().addScaledVector(side, 2.2).addScaledVector(up, 1.1).addScaledVector(fwd, -1.0);
+    lookP = pos.clone().addScaledVector(up, -1.4).addScaledVector(fwd, 0.6); fov = 56;
+  } else {                                     // pull-back reveal: Earth at scale, rocket small
+    camP = pos.clone().addScaledVector(side, 6.0).addScaledVector(up, 2.4).addScaledVector(fwd, -3.4);
+    lookP = pos.clone(); fov = 50;
   }
-  return { pos: camP, look: lookP, fov: 52 };
+  return { pos: camP, look: lookP, fov, up: LAUNCH_N };
 }
 
 // Descent & Landing — futuristic + easy: the shuttle undocks from the Endurance
@@ -1700,16 +1900,19 @@ function updateLaunch(u) {
 function updateEDL(u) {
   voyage.rocket.visible = voyage.launchTrail.visible = false;
   voyage.lander.visible = false;
-  if (voyage.ground) voyage.ground.visible = false;
   if (voyage.earthGround) voyage.earthGround.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = false;
   if (voyage.launchSky) voyage.launchSky.visible = false;
-  voyage.ellipseFull.visible = voyage.ellipseTrail.visible = false;
+  if (voyage.vaporCone) voyage.vaporCone.visible = false;
+  if (voyage.boosterGlow) voyage.boosterGlow.visible = false;
   if (voyage.frost) voyage.frost.visible = false;
   if (voyage.base) voyage.base.visible = false;
   if (voyage.spentStage) voyage.spentStage.visible = false;
+  if (earthSats) earthSats.visible = true;
+  voyage.ellipseFull.visible = voyage.ellipseTrail.visible = false;
   voyage.ship.visible = true;
   voyage.station.visible = true;                          // Endurance waits in orbit above
+  if (voyage.marsSky) voyage.marsSky.visible = false;
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = (key === 'mars');
   orbitPaths.forEach(o => { o.visible = false; });
 
@@ -1717,20 +1920,31 @@ function updateEDL(u) {
   planetMeshes.mars.orbitGroup.rotation.y = -(MARS_START + s * MARS_SWEEP);
   const M = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(M);
   const mR = planetMeshes.mars.config.size;
-  const dir = new THREE.Vector3(0.42, 0.74, 0.52).normalize();          // local "up" at the landing site
-  const tang = new THREE.Vector3().crossVectors(dir, UP).normalize();   // downrange axis
-  const cross = new THREE.Vector3().crossVectors(dir, tang).normalize();
+  // Land AT the colony site (BASE_N) so Surface Ops opens on the just-landed shuttle.
+  const dir = BASE_N;                                                   // local up at the landing site
+  const tang = new THREE.Vector3().crossVectors(dir, UP).normalize();   // matches viewTarget('surface') t1
+  const cross = new THREE.Vector3().crossVectors(tang, dir).normalize();// matches viewTarget('surface') t2
+
+  // The Mars ground patch the shuttle descends onto (the same cap Surface Ops uses).
+  if (voyage.ground) {
+    voyage.ground.position.copy(M);
+    voyage.ground.quaternion.setFromUnitVectors(UP, dir);
+    voyage.ground.material.transparent = false; voyage.ground.material.opacity = 1;
+    voyage.ground.visible = true;
+  }
 
   // Endurance parked in Mars orbit (ring still turning), where the shuttle undocked.
   voyage.station.position.copy(M).addScaledVector(dir, mR + 8.5).addScaledVector(tang, 2.6);
   voyage.station.quaternion.setFromUnitVectors(AXIS_Z, tang);
   voyage.station.userData.ring.rotation.z = elapsed * 0.5;
 
-  // Shuttle: a smooth arc from just below the station down to a gentle touchdown.
+  // Descent profile: undock high → aero-brake → pitch up → retro-burn to a soft hover-slam.
   const dpos = (uu) => {
-    const a = Math.pow(clamp01(1 - uu), 1.3) * 6.5 + 0.48;   // min alt: shuttle rests on its legs, not buried
-    const lat = Math.pow(clamp01((0.8 - uu) / 0.8), 1.2) * 4.0;
-    return M.clone().addScaledVector(dir, mR + a).addScaledVector(tang, lat);
+    const fall = Math.pow(clamp01((EDL.BURN - uu) / EDL.BURN), 1.3);
+    const hover = Math.pow(clamp01((1 - uu) / (1 - EDL.BURN)), 2.0);
+    const a = uu < EDL.BURN ? (7.0 * fall + 1.5) : (1.5 * hover);
+    const lat = Math.pow(clamp01((EDL.PITCH - uu) / EDL.PITCH), 1.2) * 4.5;
+    return M.clone().addScaledVector(dir, mR + a + 0.48).addScaledVector(tang, lat);
   };
   const pos = dpos(u);
   const alt = pos.distanceTo(M) - mR;
@@ -1739,54 +1953,73 @@ function updateEDL(u) {
   velDir.normalize();
   voyage.ship.position.copy(pos);
 
-  // Attitude: a nose-forward glide that smoothly pitches upright (engine down) to land.
+  // Attitude: nose-forward glide → pitches upright (engine down) for the burn + landing.
   const qGlide = new THREE.Quaternion().setFromUnitVectors(AXIS_Z, velDir);
-  const qUp = new THREE.Quaternion().setFromUnitVectors(AXIS_Z, dir);   // nose up, engine (−Z) toward Mars
-  voyage.ship.quaternion.copy(qGlide).slerp(qUp, clamp01((u - 0.35) / 0.3));
+  const qUp = new THREE.Quaternion().setFromUnitVectors(AXIS_Z, dir);
+  voyage.ship.quaternion.copy(qGlide).slerp(qUp, clamp01((u - EDL.PITCH + 0.06) / 0.18));
 
   const sd = voyage.ship.userData;
-  const landing = u >= 0.55, touched = u > 0.96;
-  // Braking plume: lights for the powered descent, throttles to a gentle hover, then
-  // cuts off the instant the legs settle on the surface.
-  sd.plume.visible = landing && !touched;
-  if (landing && !touched) {
-    const thr = 0.5 + clamp01((u - 0.55) / 0.38) * 0.7;
-    sd.plume.scale.set(1, thr + Math.sin(elapsed * 40) * 0.12, 1);
-    sd.trail.material.opacity = 0.85; sd.trail.scale.setScalar(2.0);
-  } else { sd.trail.material.opacity = 0; sd.trail.scale.setScalar(0.001); }
-  sd.legs.visible = u > 0.6;
+  const inEntry = u < EDL.AERO, landing = u >= EDL.BURN, touched = u > EDL.TOUCH;
 
-  // Soft entry shimmer (futuristic heat shielding) — a gentle glow, not a fireball.
-  voyage.flash.visible = u < 0.34;
-  if (voyage.flash.visible) {
-    const gi = clamp01(1 - Math.abs(u - 0.14) / 0.18);
-    voyage.flash.position.copy(pos).addScaledVector(velDir, 0.5);
-    voyage.flash.material.opacity = gi * 0.5;
-    voyage.flash.scale.setScalar(1.2 + gi * 1.4);
+  // Entry plasma glow + ionization trail (brief, high up).
+  voyage.flash.visible = inEntry;
+  if (inEntry) {
+    const heat = clamp01(1 - Math.abs(u - EDL.ENTRY * 0.6) / (EDL.ENTRY * 0.9));
+    voyage.flash.position.copy(pos).addScaledVector(velDir, 0.35);   // glow just ahead of the heat shield
+    voyage.flash.material.opacity = heat * 0.55;
+    voyage.flash.scale.setScalar(0.5 + heat * 0.9);
+    sd.trail.material.color.setHex(0xff7a32); sd.trail.material.opacity = heat * 0.6;
+    sd.trail.scale.set(0.9 + heat * 0.6, 1.8 + heat * 1.8, 1);
   }
 
-  // Light dust as it settles (gentle, not a big kick-up).
+  // Retro/landing burn: a tight bright collimated column, cut the instant legs settle.
+  sd.plume.visible = landing && !touched;
+  if (sd.plume.visible) {
+    const thr = 0.6 + clamp01((u - EDL.BURN) / (1 - EDL.BURN)) * 0.7;
+    const f = 1 + Math.sin(elapsed * 44) * 0.1;
+    sd.plume.scale.set(0.85, thr * f, 0.85);
+    sd.trail.material.color.setHex(0x6cc8ff); sd.trail.material.opacity = 0.9; sd.trail.scale.setScalar(2.2);
+  } else if (!inEntry) { sd.trail.material.opacity = 0; sd.trail.scale.setScalar(0.001); }
+  sd.legs.visible = u > 0.6;
+
+  // Dust + a few lofted debris kicked up by the burn near touchdown; settles after.
   if (voyage.dust) {
-    const near = landing && alt < 1.2;
-    voyage.dust.visible = near;
-    if (near) {
-      const d = clamp01((1.2 - alt) / 1.0);
-      voyage.dust.position.copy(M).addScaledVector(dir, mR + 0.05);
+    const active = (landing && alt < 1.8) || (touched && u < 0.99);
+    voyage.dust.visible = active;
+    if (active) {
+      const settle = touched ? clamp01((0.99 - u) / 0.025) : 1;
+      const d = clamp01((1.8 - alt) / 1.7) * settle;
+      voyage.dust.position.copy(M).addScaledVector(dir, mR + 0.04);
       voyage.dust.quaternion.setFromUnitVectors(UP, dir);
-      voyage.dust.userData.parts.forEach(p => {
-        const reach = d * p.userData.speed * 0.8;
-        p.position.set(p.userData.dir.x * reach, Math.abs(p.userData.dir.y) * reach * 0.15, p.userData.dir.z * reach);
-        p.material.opacity = d * (1 - d * 0.4) * 0.35;
-        p.scale.setScalar(p.userData.size * (1 + reach));
+      voyage.dust.userData.parts.forEach((p, i) => {
+        const debris = (i % 7 === 0);
+        const reach = d * p.userData.speed * (debris ? 1.7 : 1.1);
+        const lift = debris ? 0.45 : 0.12;
+        p.position.set(p.userData.dir.x * reach, Math.abs(p.userData.dir.y) * reach * lift, p.userData.dir.z * reach);
+        p.material.opacity = d * (debris ? 0.5 : 0.4) * (1 - d * 0.35);
+        p.scale.setScalar(p.userData.size * (debris ? 0.6 : 1) * (1 + reach * 0.8));
       });
     }
   }
 
-  // Camera: 3/4 following the shuttle down, Mars below and the Endurance above early on.
-  let camP, lookP;
-  if (u < 0.4) { camP = pos.clone().addScaledVector(cross, 4.2).addScaledVector(dir, 1.4).addScaledVector(tang, 1.7); lookP = pos.clone().addScaledVector(velDir, 1.0); }
-  else { camP = pos.clone().addScaledVector(cross, 2.8).addScaledVector(dir, 1.0).addScaledVector(tang, 0.7); lookP = pos.clone().addScaledVector(dir, -0.4); }
-  return { pos: camP, look: lookP };
+  // Telemetry handoff (read in updateTelemetry).
+  voyage.edlAlt = alt;
+  voyage.edlPhase = u < EDL.ENTRY ? 'ENTRY INTERFACE' : u < EDL.AERO ? 'PLASMA / AEROBRAKE'
+    : u < EDL.BURN ? 'PITCH-UP' : u < EDL.TOUCH ? 'RETRO BURN' : 'TOUCHDOWN';
+
+  // Camera: high entry shot → tracking the descent → low ground-level burn + landing.
+  let camP, lookP, fov;
+  if (u < EDL.AERO) {
+    camP = pos.clone().addScaledVector(cross, 3.0).addScaledVector(dir, 1.4).addScaledVector(tang, 2.0);
+    lookP = pos.clone().addScaledVector(velDir, 1.4); fov = 50;
+  } else if (u < EDL.BURN + 0.05) {
+    camP = pos.clone().addScaledVector(cross, 2.2).addScaledVector(dir, 0.6).addScaledVector(tang, 1.1);
+    lookP = pos.clone().addScaledVector(dir, -0.1); fov = 44;
+  } else {
+    camP = pos.clone().addScaledVector(cross, 1.9).addScaledVector(dir, 0.5).addScaledVector(tang, 0.8);
+    lookP = pos.clone().addScaledVector(dir, -0.15); fov = 40;
+  }
+  return { pos: camP, look: lookP, fov, up: dir };
 }
 
 function updateHelio(ph, u, dt) {
@@ -1800,6 +2033,8 @@ function updateHelio(ph, u, dt) {
   if (voyage.earthGround) voyage.earthGround.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = false;
   if (voyage.launchSky) voyage.launchSky.visible = false;
+  if (voyage.vaporCone) voyage.vaporCone.visible = false;
+  if (voyage.boosterGlow) voyage.boosterGlow.visible = false;
   if (earthSats) earthSats.visible = true;
   const isSurface = ph.key === 'surface';
   voyage.ellipseFull.visible = voyage.ellipseTrail.visible = !isSurface;
@@ -1859,12 +2094,23 @@ function updateHelio(ph, u, dt) {
       if (voyage.ground) {
         voyage.ground.position.copy(Mw);
         voyage.ground.quaternion.setFromUnitVectors(UP, BASE_N);   // cap apex → colony point
+        voyage.ground.material.transparent = false; voyage.ground.material.opacity = 1;
         voyage.ground.visible = true;
       }
       voyage.base.position.copy(Mw).addScaledVector(BASE_N, mR * 1.002);   // seat on the ground cap
       voyage.base.quaternion.setFromUnitVectors(UP, BASE_N);
       voyage.base.visible = true;
-    } else { voyage.base.visible = false; if (voyage.ground) voyage.ground.visible = false; }
+      // Living base: gently pulse the window glow + flutter the flag.
+      const b = voyage.base.userData, pulse = 1.15 + Math.sin(elapsed * 1.6) * 0.2;
+      if (b.glowMats) b.glowMats.forEach(m => { m.emissiveIntensity = pulse; });
+      if (b.flag) b.flag.rotation.z = Math.sin(elapsed * 2.0) * 0.16;
+      if (voyage.marsSky) {
+        voyage.marsSky.position.copy(Mw);
+        voyage.marsSky.material.uniforms.uSun.value.copy(Mw).multiplyScalar(-1).normalize();   // sun direction from the colony
+        voyage.marsSky.visible = true;
+      }
+      asteroidBelt.visible = false;   // no asteroids hanging in the Martian daytime sky
+    } else { voyage.base.visible = false; if (voyage.ground) voyage.ground.visible = false; if (voyage.marsSky) voyage.marsSky.visible = false; asteroidBelt.visible = true; }
   }
 
   if (!isSurface) {
@@ -1895,12 +2141,13 @@ function updateTelemetry(ph, u, s) {
     vEls['v-dist'].textContent = `${Math.round(u * 400)} KM ALT`;
     vEls['v-engine'].textContent = '● BURN'; vEls['v-engine'].className = 'warn';
   } else if (ph.mode === 'edl') {
-    vEls['v-elapsed'].textContent = `ALT ${Math.max(0, Math.round(Math.pow(1 - u, 1.3) * 110))} KM`;
-    vEls['v-vel'].textContent = `${(Math.pow(1 - u, 1.4) * 3.4 + 0.04).toFixed(1)} KM/S`;
-    vEls['v-dist'].textContent = u < 0.2 ? 'UNDOCK' : (u < 0.55 ? 'GLIDE' : (u > 0.96 ? 'TOUCHDOWN' : 'POWERED LANDING'));
-    const retro = u >= 0.55 && u <= 0.96;
-    vEls['v-engine'].textContent = u > 0.96 ? '○ DOWN' : (retro ? '● RETRO' : '○ GLIDE');
-    vEls['v-engine'].className = retro ? 'warn' : '';
+    const a = voyage.edlAlt ?? 8;
+    vEls['v-elapsed'].textContent = `ALT ${Math.max(0, Math.round((a - 0.48) / 8.5 * 120))} KM`;
+    vEls['v-vel'].textContent = `${Math.max(0, (a - 0.48) / 8.5 * 4.6 + (u < EDL.AERO ? 1.0 : 0)).toFixed(1)} KM/S`;
+    vEls['v-dist'].textContent = voyage.edlPhase || 'DESCENT';
+    const retro = u >= EDL.BURN && u <= EDL.TOUCH, plasma = u < EDL.AERO;
+    vEls['v-engine'].textContent = u > EDL.TOUCH ? '○ DOWN' : (retro ? '● RETRO' : (plasma ? '▲ PLASMA' : '○ AEROBRAKE'));
+    vEls['v-engine'].className = (retro || plasma) ? 'warn' : '';
   } else {
     const st = voyageStats(s);
     vEls['v-elapsed'].textContent = `DAY ${Math.round(st.day)} / 259`;
@@ -1951,6 +2198,7 @@ function updateVoyage(dt) {
     // Cruise opens near Earth (the staging), then settles into the ring close-up.
     let view = ph.view;
     if (ph.key === 'cruise') view = 'endurance';
+    if (ph.key === 'approach') view = 'approach';
     cam = viewTarget(view, st, s);
   }
   // Aim the directional sun + shadow frustum at the current subject each frame so the
@@ -1964,12 +2212,16 @@ function updateVoyage(dt) {
 
   // Per-stage focal length (stages may return a `fov`): snap on seek, ease while playing.
   const targetFov = cam.fov || 55;
-  if (!voyage.camInit) { voyage.camPos.copy(cam.pos); voyage.camLook.copy(cam.look); voyage.camInit = true; camera.fov = targetFov; camera.updateProjectionMatrix(); }
+  const targetUp = cam.up || UP;   // local "up" so launch/surface read level instead of tilted
+  if (!voyage.camInit) { voyage.camPos.copy(cam.pos); voyage.camLook.copy(cam.look); voyage.camUp.copy(targetUp); voyage.camInit = true; camera.fov = targetFov; camera.updateProjectionMatrix(); }
   else if (Math.abs(camera.fov - targetFov) > 0.01) { camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-dt * 3)); camera.updateProjectionMatrix(); }
   const k = 1 - Math.exp(-dt * 2.4);
   voyage.camPos.lerp(cam.pos, k);
   voyage.camLook.lerp(cam.look, k);
+  voyage.camUp.lerp(targetUp, k);
+  if (voyage.camUp.lengthSq() > 1e-6) voyage.camUp.normalize();
   camera.position.copy(voyage.camPos);
+  camera.up.copy(voyage.camUp);
   camera.lookAt(voyage.camLook);
 }
 
@@ -2020,6 +2272,16 @@ function startVoyage() {
     }));
     voyage.flash.visible = false;
     scene.add(voyage.flash);
+    voyage.vaporCone = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: radialTexture(['rgba(240,250,255,0.9)', 'rgba(200,225,255,0.35)', 'rgba(200,225,255,0)']),
+      transparent: true, blending: THREE.NormalBlending, depthWrite: false, opacity: 0,
+    }));
+    voyage.vaporCone.visible = false; scene.add(voyage.vaporCone);   // max-Q condensation
+    voyage.boosterGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: radialTexture(['rgba(255,180,90,0.95)', 'rgba(255,90,30,0.4)', 'rgba(255,40,10,0)']),
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0,
+    }));
+    voyage.boosterGlow.visible = false; scene.add(voyage.boosterGlow);   // spent-stage reentry glow
     voyage.frost = buildParticles(26, 0xdff0ff, true, 0.05, 0.17);   // ice/gas at staging
     scene.add(voyage.frost);
     voyage.dust = buildParticles(28, 0xc98f63, false, 0.18, 0.5);    // dust at touchdown
@@ -2030,6 +2292,9 @@ function startVoyage() {
     voyage.ground = buildMarsGround();                               // curved Mars ground under the colony
     voyage.ground.visible = false;
     scene.add(voyage.ground);
+    voyage.marsSky = buildMarsSky();                                 // dusty Mars sky (Surface Ops only)
+    voyage.marsSky.visible = false;
+    scene.add(voyage.marsSky);
     voyage.earthGround = buildEarthGround();                         // launch-site ground patch
     voyage.earthGround.visible = false;
     scene.add(voyage.earthGround);
@@ -2053,7 +2318,7 @@ function startVoyage() {
     // self-shadows on the solid craft (skip additive/transparent flames + glass).
     [voyage.ship, voyage.rocket, voyage.spentStage, voyage.station, voyage.base].forEach(o => {
       if (!o) return;
-      setEnvIntensity(o, 0.32);
+      setEnvIntensity(o, 0.55);
       o.traverse(m => {
         if (!m.isMesh) return;
         const mat = m.material;
@@ -2087,6 +2352,8 @@ function endVoyage() {
     if (voyage.earthGround) voyage.earthGround.visible = false;
     if (voyage.launchPad) voyage.launchPad.visible = false;
     if (voyage.launchSky) voyage.launchSky.visible = false;
+    if (voyage.vaporCone) voyage.vaporCone.visible = false;
+    if (voyage.boosterGlow) voyage.boosterGlow.visible = false;
     if (voyage.spentStage) voyage.spentStage.visible = false;
     if (voyage.station) voyage.station.visible = false;
   }
@@ -2097,6 +2364,7 @@ function endVoyage() {
   document.getElementById('hud').classList.remove('voyage-on');
   document.querySelectorAll('.sim-stage').forEach(b => b.classList.remove('active'));
   camera.fov = 55; camera.updateProjectionMatrix();   // reset any per-stage focal length
+  camera.up.set(0, 1, 0);                              // reset roll for OrbitControls
   if (earthSats) earthSats.visible = true;
   controls.target.set(0, 0, 0);
   focusOn(null);
@@ -2138,8 +2406,6 @@ function animate() {
   elapsed += dt;
   const t = elapsed;
 
-  // Sun shader
-  sunUniforms.uTime.value = t;
   sun.rotation.y += dt * 0.05;
 
   // Planets — orbit + spin
@@ -2153,13 +2419,16 @@ function animate() {
     }
     pm.mesh.rotation.y += dt * pm.config.spin;
     if (pm.mesh.userData.clouds) {
-      // Clouds are children of the mesh — they inherit spin. Add a small differential drift.
-      pm.mesh.userData.clouds.rotation.y += dt * 0.05;
-      pm.mesh.userData.clouds.material.uniforms.uTime.value = t;
+      pm.mesh.userData.clouds.rotation.y += dt * 0.012;   // real cloud shell — just a slow drift
     }
-    pm.material.uniforms.uTime.value = t;
-    // Update light position relative to sun
-    pm.material.uniforms.uLightPos.value.set(0, 0, 0);
+    if (pm.material.uniforms) {                            // only the procedural planets have uniforms
+      pm.material.uniforms.uTime.value = t;
+      pm.material.uniforms.uLightPos.value.set(0, 0, 0);
+    }
+    if (pm.mesh.material.userData.sunDirRef) {             // real-texture Earth — feed sun direction (sun at origin)
+      pm.mesh.getWorldPosition(_tmpVec);
+      pm.mesh.material.userData.sunDirRef.value.copy(_tmpVec).multiplyScalar(-1).normalize();
+    }
   }
 
   updateEarthSats(dt);   // satellites orbiting Earth
