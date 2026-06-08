@@ -87,6 +87,9 @@ composer.addPass(outputPass);
 // ============================================================
 const clock = new THREE.Clock();
 const TAU = Math.PI * 2;
+// Shared lighting/scratch constants for the render overhaul.
+const SUN_DIR = new THREE.Vector3(40, 18, 25).normalize();   // env-bake sun direction (IBL highlight)
+const _tmpVec = new THREE.Vector3();
 
 function radialTexture(stops, size = 256) {
   const c = document.createElement('canvas'); c.width = c.height = size;
@@ -245,18 +248,78 @@ function addCoronaSprite(scale, opacity, stops) {
 // A single, tight corona glow (the extra outer haze layers were removed).
 addCoronaSprite(sunRadius * 3.4, 0.9, ['rgba(255,210,120,0.85)', 'rgba(255,140,40,0.35)', 'rgba(255,90,30,0)']);
 
-// Lighting
-const sunLight = new THREE.PointLight(0xffd9a8, 4.2, 0, 1.2);
+// ---- Lighting + image-based lighting (IBL) ----
+// A dim procedural "space" environment gives the PBR craft (metal/glass) believable
+// reflections without flooding them like a studio: one hot sun disc on a navy gradient,
+// baked to a PMREM env map used for IBL only (the visible background stays black).
+function buildSpaceEnvScene() {
+  const env = new THREE.Scene();
+  env.add(new THREE.Mesh(
+    new THREE.SphereGeometry(60, 32, 16),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      uniforms: { top: { value: new THREE.Color(0x0a1426) }, bot: { value: new THREE.Color(0x01030a) } },
+      vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: `varying vec3 vP; uniform vec3 top; uniform vec3 bot;
+        void main(){ float h = clamp(normalize(vP).y*0.5+0.5,0.0,1.0); gl_FragColor = vec4(mix(bot,top,h),1.0); }`,
+    })
+  ));
+  const sd = new THREE.Mesh(new THREE.SphereGeometry(2.4, 24, 24),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffe7c4).multiplyScalar(6.0) }));   // >1 = HDR for PMREM
+  sd.position.copy(SUN_DIR).multiplyScalar(50);
+  env.add(sd);
+  return env;
+}
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envRT = pmrem.fromScene(buildSpaceEnvScene(), 0.25, 0.1, 100);   // soft (sigma 0.25) stylized IBL
+scene.environment = envRT.texture;     // IBL only — do NOT dispose envRT (backs scene.environment)
+pmrem.dispose();
+
+// Trim per-material env reflection strength so space stays moody (called after craft build).
+function setEnvIntensity(root, intensity) {
+  root.traverse(o => {
+    const m = o.material; if (!m) return;
+    (Array.isArray(m) ? m : [m]).forEach(mat => {
+      if (mat && mat.isMeshStandardMaterial) { mat.envMapIntensity = intensity; mat.needsUpdate = true; }
+    });
+  });
+}
+
+// Warm point fill at the sun (planets read it through their own shaders).
+const sunLight = new THREE.PointLight(0xffd9a8, 1.5, 0, 1.2);
 scene.add(sunLight);
-scene.add(new THREE.AmbientLight(0x182842, 0.55));
-const fillLight = new THREE.DirectionalLight(0x4a6088, 0.25);
-fillLight.position.set(-1, 0.5, -1);
-scene.add(fillLight);
+
+// Directional "sun" key with soft shadows. Re-aimed each voyage frame from the sun
+// (origin) toward the current subject so craft are lit consistently with the planets.
+const sunKey = new THREE.DirectionalLight(0xfff1dc, 2.6);
+sunKey.position.copy(SUN_DIR).multiplyScalar(200);
+sunKey.castShadow = true;
+sunKey.shadow.mapSize.set(2048, 2048);
+sunKey.shadow.bias = -0.0005;
+sunKey.shadow.normalBias = 0.04;
+scene.add(sunKey);
+scene.add(sunKey.target);
+function frameSunShadow(center, radius) {
+  const dir = _tmpVec.copy(center);
+  if (dir.lengthSq() < 1e-6) dir.copy(SUN_DIR); else dir.normalize();   // sun(origin) → subject
+  const c = sunKey.shadow.camera;
+  c.left = -radius; c.right = radius; c.top = radius; c.bottom = -radius;
+  c.near = 1; c.far = radius * 8;
+  sunKey.position.copy(center).addScaledVector(dir, -radius * 4);        // step back toward the sun
+  sunKey.target.position.copy(center); sunKey.target.updateMatrixWorld();
+  c.updateProjectionMatrix();
+}
+
+// Cool rim back-light + sky/ground hemisphere fill so craft separate from the void.
+const rimLight = new THREE.DirectionalLight(0x88b4ff, 0.5);
+rimLight.position.copy(SUN_DIR).multiplyScalar(-180); rimLight.position.y += 60;
+scene.add(rimLight); scene.add(rimLight.target);
+scene.add(new THREE.HemisphereLight(0x223a5e, 0x05060a, 0.35));
 
 // ============================================================
 // 5. PLANET FACTORY (procedural shader)
 // ============================================================
-function makePlanetMaterial({ base, accent, polar, scale, ridges = false, banded = false, glow = 0.0 }) {
+function makePlanetMaterial({ base, accent, polar, scale, ridges = false, banded = false, glow = 0.0, variant = null }) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
@@ -1630,7 +1693,19 @@ function updateVoyage(dt) {
     if (ph.key === 'cruise') view = 'endurance';
     cam = viewTarget(view, st, s);
   }
-  if (!voyage.camInit) { voyage.camPos.copy(cam.pos); voyage.camLook.copy(cam.look); voyage.camInit = true; }
+  // Aim the directional sun + shadow frustum at the current subject each frame so the
+  // craft are lit from the same direction as the planet shaders (sun at the origin).
+  let _subj = null, _srad = 5;
+  if (ph.mode === 'launch') { _subj = voyage.rocket.position; _srad = 3.5; }
+  else if (ph.mode === 'edl') { _subj = voyage.ship.position; _srad = 4; }
+  else if (ph.key === 'surface') { _subj = voyage.base.position; _srad = 5; }
+  else if (voyage.station && voyage.station.visible) { _subj = voyage.station.position; _srad = 4; }
+  if (_subj) frameSunShadow(_subj, _srad);
+
+  // Per-stage focal length (stages may return a `fov`): snap on seek, ease while playing.
+  const targetFov = cam.fov || 55;
+  if (!voyage.camInit) { voyage.camPos.copy(cam.pos); voyage.camLook.copy(cam.look); voyage.camInit = true; camera.fov = targetFov; camera.updateProjectionMatrix(); }
+  else if (Math.abs(camera.fov - targetFov) > 0.01) { camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-dt * 3)); camera.updateProjectionMatrix(); }
   const k = 1 - Math.exp(-dt * 2.4);
   voyage.camPos.lerp(cam.pos, k);
   voyage.camLook.lerp(cam.look, k);
