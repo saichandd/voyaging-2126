@@ -18,14 +18,19 @@ const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
-// EffectComposer + OutputPass handles tonemapping — keep render passes linear so
-// bloom samples HDR values correctly.
-renderer.toneMapping = THREE.NoToneMapping;
+// Filmic tonemapping (ACES) applied by OutputPass at the end of the chain — render
+// passes stay linear/HDR so bloom samples values > 1.0, then ACES gives a cinematic
+// highlight rolloff instead of the old flat, clipped look.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+// Soft contact shadows for the hero close-ups (one directional sun light).
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000206);
-scene.fog = new THREE.FogExp2(0x000510, 0.00025);
+scene.fog = new THREE.FogExp2(0x070a18, 0.00016);
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 8000);
 camera.position.set(180, 110, 240);
