@@ -1263,11 +1263,11 @@ function buildLander() {
 // SpaceX/NASA colony image. Built +Y up; placed + oriented on the surface in updateHelio.
 function buildMarsBase() {
   const g = new THREE.Group();
-  const metal = new THREE.MeshStandardMaterial({ color: 0xdfe4ea, metalness: 0.9, roughness: 0.28, emissive: 0x2a3340, emissiveIntensity: 0.3 });
+  const metal = new THREE.MeshPhysicalMaterial({ color: 0xdfe4ea, metalness: 0.95, roughness: 0.22, clearcoat: 0.6, clearcoatRoughness: 0.2, emissive: 0x2a3340, emissiveIntensity: 0.25 });
   const white = new THREE.MeshStandardMaterial({ color: 0xe9eef4, metalness: 0.3, roughness: 0.6, emissive: 0x2a3038, emissiveIntensity: 0.35 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x3a4250, metalness: 0.7, roughness: 0.5 });
   const padMat = new THREE.MeshStandardMaterial({ color: 0x5a4030, metalness: 0.2, roughness: 0.95, emissive: 0x1a0f08, emissiveIntensity: 0.3 });
-  const glass = new THREE.MeshStandardMaterial({ color: 0xbfe9ff, metalness: 0.1, roughness: 0.15, transparent: true, opacity: 0.34, emissive: 0x2f6a86, emissiveIntensity: 0.6, side: THREE.DoubleSide });
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0xdff2ff, metalness: 0.0, roughness: 0.08, transmission: 0.92, ior: 1.3, thickness: 0.4, transparent: true, clearcoat: 1.0, clearcoatRoughness: 0.1, emissive: 0x2f6a86, emissiveIntensity: 0.22, side: THREE.DoubleSide });
   const panelMat = new THREE.MeshStandardMaterial({ color: 0x16245c, metalness: 0.6, roughness: 0.35, emissive: 0x0b1b44, emissiveIntensity: 0.6 });
   const warm = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
   const cyan = new THREE.MeshBasicMaterial({ color: 0x6ff1ff });
@@ -1349,55 +1349,92 @@ function buildMarsBase() {
   return g;
 }
 
+// Curved Mars ground patch for Surface Ops: a real slice of a Mars-radius sphere that
+// shares the orbital Mars shader, so the colony sits ON terrain with a true horizon
+// (planet curving away behind) instead of floating on the limb. Lifted a hair off the
+// globe to avoid z-fighting.
+function marsGroundTexture(s = 1024) {
+  const c = document.createElement('canvas'); c.width = c.height = s;
+  const x = c.getContext('2d');
+  x.fillStyle = '#a8542c'; x.fillRect(0, 0, s, s);
+  for (let i = 0; i < 1500; i++) {                 // mottled dust/rock variation
+    const r = 6 + Math.random() * 64, px = Math.random() * s, py = Math.random() * s, t = Math.random();
+    x.fillStyle = t < 0.5 ? `rgba(120,55,28,${0.06 + Math.random() * 0.12})`
+      : t < 0.85 ? `rgba(205,125,72,${0.05 + Math.random() * 0.10})`
+        : `rgba(70,32,18,${0.06 + Math.random() * 0.12})`;
+    x.beginPath(); x.arc(px, py, r, 0, TAU); x.fill();
+  }
+  for (let i = 0; i < 500; i++) {                  // scattered dark rocks
+    x.fillStyle = `rgba(38,18,10,${0.2 + Math.random() * 0.3})`;
+    x.beginPath(); x.arc(Math.random() * s, Math.random() * s, 1 + Math.random() * 4, 0, TAU); x.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(3, 3);
+  return tex;
+}
+function buildMarsGround() {
+  const mR = planetMeshes.mars.config.size;
+  const geo = new THREE.SphereGeometry(mR, 96, 72, 0, TAU, 0, Math.PI * 0.42);   // cap around +Y
+  // Dedicated Mars-dirt material (NOT the globe shader, whose pole-apex would read as ice);
+  // MeshStandard so it catches the sun + IBL and RECEIVES the colony's contact shadow.
+  const mat = new THREE.MeshStandardMaterial({ map: marsGroundTexture(), color: 0xc16a3c, roughness: 0.98, metalness: 0.0 });
+  const m = new THREE.Mesh(geo, mat);
+  m.scale.setScalar(1.002);
+  m.receiveShadow = true;
+  return m;
+}
+
 // Journey timeline: ordered stages, each with a real-time duration.
 // Stages follow NASA's Mars mission timeline: Launch → Cruise → Approach →
 // Entry, Descent & Landing → Surface Operations. Durations sum to ~120s.
 // Text/facts are short, informal prompts — meant to be narrated over live.
 const PHASES = [
-  { key: 'launch', label: '01 · LAUNCH', short: 'LAUNCH', dur: 16, mode: 'launch',
+  {
+    key: 'launch', label: '01 · LAUNCH', short: 'LAUNCH', dur: 16, mode: 'launch',
     tag: 'STAGE 01 · LAUNCH',
-    law: 'NEWTON III · action–reaction',
     facts: [
-      'Liftoff: 3–4 g pins you to your seat — you feel 3 to 4× your own weight.',
-      'The rocket burns tonnes of fuel a second; it shakes and roars.',
-      '~9 minutes of burn to reach 28,000 km/h — orbital speed.',
-      'Then the engines cut and you’re suddenly weightless.',
-    ] },
-  { key: 'cruise', label: '02 · CRUISE', short: 'CRUISE', dur: 48, mode: 'helio', s0: 0.03, s1: 0.78, view: 'endurance',
+      'Liftoff. 3–4 g, i.e. 3 to 4× your own weight.',
+      '~9 minutes of burn to reach 28,000 km/h. escape velocity.',
+      'engines cut off, suddenly weightless.',
+    ]
+  },
+  {
+    key: 'cruise', label: '02 · CRUISE', short: 'CRUISE', dur: 48, mode: 'helio', s0: 0.03, s1: 0.78, view: 'endurance',
     tag: 'STAGE 02 · CRUISE',
-    law: 'NEWTON I + KEPLER · coasting on an ellipse',
     facts: [
-      'Dock with the Endurance — a giant ring station that carries you to Mars.',
-      'The whole ring spins (~2 rpm); centrifugal force becomes your gravity (a = ω²r).',
-      'Then engines off — an 8-month coast on an ellipse, floating between worlds.',
-      'Food is freeze-dried & vacuum-packed; water — even urine — is recycled.',
-    ] },
-  { key: 'approach', label: '03 · APPROACH', short: 'APPROACH', dur: 24, mode: 'helio', s0: 0.78, s1: 0.94, view: 'map',
+      'dock with the interplanetary mothership. already placed.',
+      'comfortable travel as the ring spins giving gravity from centrifugal force.',
+      'frozen, dried food. all water, even urine, is recycled. game area.',
+      '8-month coast.',
+    ]
+  },
+  {
+    key: 'approach', label: '03 · APPROACH', short: 'APPROACH', dur: 4, mode: 'helio', s0: 0.78, s1: 0.94, view: 'map',
     tag: 'STAGE 03 · APPROACH',
-    law: 'KEPLER II · slower when farther',
     facts: [
-      'Mars grows from a dot into a disc over the final weeks.',
-      'You’re slowing down — fastest near the Sun, slowest out here (Kepler).',
-      'Millions of km from help: a radio call to Earth takes minutes each way.',
-      'Cosmic radiation is a constant risk; you shelter in a shielded bay in solar storms.',
-    ] },
-  { key: 'edl', label: '04 · DESCENT & LANDING', short: 'DESCENT & LANDING', dur: 20, mode: 'edl', s0: 0.94, s1: 1.0,
+      'Mars grows from a dot into a disc over the final weeks',
+      'any communication to earth is gonna take about 15min to reach at this distance',
+    ]
+  },
+  {
+    key: 'edl', label: '04 · DESCENT & LANDING', short: 'DESCENT & LANDING', dur: 20, mode: 'edl', s0: 0.94, s1: 1.0,
     tag: 'STAGE 04 · DESCENT & LANDING',
-    law: 'NEWTON · powered descent',
     facts: [
-      'The shuttle undocks from the Endurance and drops toward Mars.',
-      'Future tech: no parachutes — a smooth, computer-flown powered descent.',
-      'Engines throttle to a gentle hover and set you down softly on the legs.',
-    ] },
-  { key: 'surface', label: '05 · SURFACE OPERATIONS', short: 'SURFACE OPS', dur: 12, mode: 'helio', s0: 1.0, s1: 1.0, view: 'surface',
+      'shuttle undocks from the Mothership.',
+      'just a smooth descent much easier than the take off because of low gravity.',
+      'the weather at in the US Colony is maintained at a nice 18 celcius.'
+    ]
+  },
+  {
+    key: 'surface', label: '05 · SURFACE OPERATIONS', short: 'SURFACE OPS', dur: 16, mode: 'helio', s0: 1.0, s1: 1.0, view: 'surface',
     tag: 'STAGE 05 · SURFACE OPERATIONS',
-    law: 'gravity · 0.38 g',
     facts: [
-      'Arrived — ~8.5 months and ~480 million km after launch.',
-      'Gravity is 0.38 g, but after months weightless even that feels heavy — many can’t stand at first.',
-      'A rust-red desert under a dusty pink sky, and a Sun half the size of home.',
-      'Your return window to Earth opens only in ~26 months.',
-    ] },
+      'journey would not be complete in 8.5 months and ~480 million km after launch.',
+      'gravity is only 38% g, but after months of very low gravity, many can’t stand.',
+      'please purchase the tickets from spacexyz.com'
+    ]
+  },
 ];
 let _acc = 0;
 PHASES.forEach(p => { p.t0 = _acc; _acc += p.dur; p.t1 = _acc; });
@@ -1442,15 +1479,17 @@ function viewTarget(view, st, s) {
     return { pos, look };
   }
   if (view === 'surface') {
-    // 3/4 side view of the colony: low over the surface so structures stand up and
-    // the planet curves away behind. Built from the surface normal + two tangents.
+    // Low "boots on the ground" hero shot: camera just above the surface, set back from
+    // the colony, looking across it so the planet curves to a real horizon in the upper
+    // third and the ground cap fills the foreground. Long-ish lens so the domes loom.
     const m = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(m);
     const mR = planetMeshes.mars.config.size;
-    const B = m.clone().addScaledVector(BASE_N, mR);                 // the colony's surface point
+    const B = m.clone().addScaledVector(BASE_N, mR * 1.002);          // the colony's ground point
     const t1 = new THREE.Vector3().crossVectors(BASE_N, UP).normalize();
     const t2 = new THREE.Vector3().crossVectors(t1, BASE_N).normalize();
-    const pos = B.clone().addScaledVector(BASE_N, 1.2).addScaledVector(t1, 1.3).addScaledVector(t2, 1.08);
-    return { pos, look: B.clone().addScaledVector(BASE_N, 0.34) };
+    const pos = B.clone().addScaledVector(BASE_N, 0.85).addScaledVector(t1, -1.6).addScaledVector(t2, 1.05);
+    const look = B.clone().addScaledVector(BASE_N, 0.12).addScaledVector(t1, 0.15);
+    return { pos, look, fov: 46 };
   }
   const mars = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(mars);
   return { pos: ship.clone().addScaledVector(vel, -10).addScaledVector(up, 5).addScaledVector(side, 6), look: mars };
@@ -1691,10 +1730,16 @@ function updateHelio(ph, u, dt) {
     if (isSurface) {
       planetMeshes.mars.mesh.rotation.y = 0.6;
       const Mw = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(Mw);
-      voyage.base.position.copy(Mw).addScaledVector(BASE_N, planetMeshes.mars.config.size);
+      const mR = planetMeshes.mars.config.size;
+      if (voyage.ground) {
+        voyage.ground.position.copy(Mw);
+        voyage.ground.quaternion.setFromUnitVectors(UP, BASE_N);   // cap apex → colony point
+        voyage.ground.visible = true;
+      }
+      voyage.base.position.copy(Mw).addScaledVector(BASE_N, mR * 1.002);   // seat on the ground cap
       voyage.base.quaternion.setFromUnitVectors(UP, BASE_N);
       voyage.base.visible = true;
-    } else voyage.base.visible = false;
+    } else { voyage.base.visible = false; if (voyage.ground) voyage.ground.visible = false; }
   }
 
   if (!isSurface) {
