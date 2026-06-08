@@ -153,6 +153,8 @@ const NOISE_GLSL = /* glsl */ `
     }
     return v;
   }
+  // Soft day/night terminator (smooth, not a hard line). N,L in world space.
+  float dayNight(vec3 N, vec3 L){ return smoothstep(-0.18, 0.22, dot(N, L)); }
 `;
 
 // ============================================================
@@ -216,17 +218,14 @@ const sunMat = new THREE.ShaderMaterial({
     ${NOISE_GLSL}
     void main() {
       vec3 p = vPosition * 0.18;
-      float n1 = fbm(p + vec3(uTime * 0.07));
+      float n1 = fbm(p + vec3(uTime * 0.06));
       float n2 = ridged(p * 1.5 - vec3(uTime * 0.05));
-      float surface = mix(n1, n2, 0.55);
-      vec3 cool = vec3(0.85, 0.18, 0.02);
-      vec3 mid  = vec3(1.0, 0.55, 0.12);
-      vec3 hot  = vec3(1.0, 0.95, 0.7);
-      vec3 col = mix(cool, mid, smoothstep(0.25, 0.65, surface));
-      col = mix(col, hot, smoothstep(0.55, 0.92, surface * surface));
-      float fres = pow(1.0 - max(0.0, dot(vNormal, vec3(0.0, 0.0, 1.0))), 2.0);
-      col += vec3(1.0, 0.55, 0.18) * fres * 0.55;
-      gl_FragColor = vec4(col * 1.6, 1.0);
+      float s = mix(n1, n2, 0.5);
+      vec3 col = mix(vec3(0.85, 0.18, 0.02), vec3(1.0, 0.55, 0.12), smoothstep(0.25, 0.6, s));
+      col = mix(col, vec3(1.0, 0.95, 0.72), smoothstep(0.55, 0.95, s * s));
+      float mu = clamp(vNormal.z, 0.0, 1.0);                 // view-space normal → limb
+      col *= (0.55 + 0.45 * pow(mu, 0.6)) * 2.6;             // hot center, dim limb, HDR core for bloom
+      gl_FragColor = vec4(col, 1.0);
     }
   `,
 });
@@ -331,6 +330,7 @@ function makePlanetMaterial({ base, accent, polar, scale, ridges = false, banded
       uRidges: { value: ridges ? 1.0 : 0.0 },
       uBanded: { value: banded ? 1.0 : 0.0 },
       uGlow: { value: glow },
+      uVariant: { value: variant === 'earth' ? 1.0 : variant === 'mars' ? 2.0 : 0.0 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vNormal;
@@ -354,40 +354,83 @@ function makePlanetMaterial({ base, accent, polar, scale, ridges = false, banded
       uniform float uRidges;
       uniform float uBanded;
       uniform float uGlow;
+      uniform float uVariant;
       varying vec3 vNormal;
       varying vec3 vWorldPos;
       varying vec3 vLocalPos;
       ${NOISE_GLSL}
       void main() {
         vec3 nPos = normalize(vLocalPos);
-        vec3 p = nPos * uScale;
-        float n = fbm(p);
-        float r = ridged(p * 1.5);
-        // Latitude-banded variation for gas giants
-        float bandLat = nPos.y;
-        float bands = sin(bandLat * 14.0 + fbm(p * 2.5) * 2.4) * 0.5 + 0.5;
-        float surface = mix(mix(n, r, uRidges), bands, uBanded);
-        vec3 col = mix(uBase, uAccent, smoothstep(0.35, 0.7, surface));
-        float detail = fbm(p * 5.0);
-        col = mix(col, col * 0.7, smoothstep(0.4, 0.7, detail) * 0.4);
-        // Polar caps (suppressed on gas giants)
-        float lat = abs(nPos.y);
-        float pcap = smoothstep(0.78, 0.95, lat + fbm(p * 3.0) * 0.07) * (1.0 - uBanded * 0.7);
-        col = mix(col, uPolar, pcap);
-        // Light
-        vec3 L = normalize(uLightPos - vWorldPos);
-        float ndl = max(0.0, dot(vNormal, L));
-        float light = pow(ndl, 0.85) * 0.92 + 0.08;
-        col *= light;
-        // Subtle rim
+        vec3 L = normalize(uLightPos - vWorldPos);          // sun at the origin, per-fragment
         vec3 V = normalize(cameraPosition - vWorldPos);
-        float rim = pow(1.0 - max(0.0, dot(vNormal, V)), 3.0) * (0.25 + uGlow);
-        col += uAccent * rim * 0.6;
+        vec3 col;
+
+        if (uVariant > 1.5) {
+          // ---- MARS: ridged terrain, warped canyons, polar caps, dusty limb ----
+          vec3 warp = vec3(fbm(nPos*2.0+vec3(5.0)), fbm(nPos*2.0+vec3(9.0)), fbm(nPos*2.0+vec3(13.0)));
+          float terr = ridged(nPos*2.6 + warp*0.8);
+          float canyon = 1.0 - smoothstep(0.0, 0.06, abs(fbm(nPos*3.0+warp*1.5) - 0.5));
+          vec3 surf = mix(vec3(0.42,0.13,0.06), vec3(0.80,0.36,0.17), smoothstep(0.35,0.8,terr));
+          surf = mix(surf, vec3(0.22,0.07,0.04), canyon*0.7);
+          surf *= 0.85 + 0.3*fbm(nPos*12.0);
+          float cap = smoothstep(0.80, 0.90, abs(nPos.y) + fbm(nPos*5.0)*0.08);
+          surf = mix(surf, vec3(0.95,0.93,0.97), cap);
+          float d = dayNight(vNormal, L);
+          float rim = pow(1.0 - max(dot(vNormal,V),0.0), 3.0);
+          col = surf*(d*0.95+0.06) + vec3(0.95,0.55,0.45)*rim*0.14*d;
+
+        } else if (uVariant > 0.5) {
+          // ---- EARTH: continents/oceans, ocean glint, cloud shadow, night-side lights ----
+          vec3 q = vec3(fbm(nPos*1.7+vec3(11.0)), fbm(nPos*1.7+vec3(27.0)), fbm(nPos*1.7+vec3(41.0)));
+          float h = fbm(nPos*2.3 + q*1.4);
+          float land = smoothstep(0.50, 0.55, h);
+          float lat = abs(nPos.y);
+          vec3 ocean = mix(vec3(0.012,0.05,0.18), vec3(0.03,0.24,0.36), smoothstep(0.48,0.54,h) + fbm(nPos*0.8)*0.15);
+          vec3 landCol = mix(vec3(0.55,0.44,0.22), vec3(0.09,0.30,0.11), smoothstep(0.05,0.35,lat));   // desert→lush
+          landCol = mix(landCol, vec3(0.42,0.40,0.36), smoothstep(0.55,0.8,lat));                        // →tundra
+          landCol = mix(landCol, landCol*1.2, smoothstep(0.58,0.82,h));                                  // highlands
+          landCol *= 0.85 + 0.3*fbm(nPos*9.0);
+          float ice = smoothstep(0.85, 0.94, lat + fbm(nPos*4.0)*0.07);   // confined to the poles
+          vec3 surf = mix(mix(ocean, landCol, land), vec3(0.86,0.89,0.94), ice);
+          float d = dayNight(vNormal, L);
+          vec3 H = normalize(L + V);
+          float spec = pow(max(dot(vNormal,H),0.0), 90.0) * (1.0-land) * d;                              // ocean glint
+          vec3 cp = nPos*4.0 + vec3(uTime*0.012, 0.0, uTime*0.005);
+          float cl = smoothstep(0.55, 0.92, fbm(cp)*0.7 + fbm(cp*2.5)*0.3);
+          float shadow = 1.0 - cl*0.30;
+          float lightsMask = land * smoothstep(0.50, 0.85, fbm(nPos*22.0)) * (1.0-ice);
+          vec3 night = vec3(1.0,0.82,0.45) * lightsMask * (1.0-d) * 0.9;
+          float rim = pow(1.0 - max(dot(vNormal,V),0.0), 3.0);
+          col = surf*(d*shadow) + vec3(0.9,0.95,1.0)*spec*0.35 + night + vec3(0.45,0.66,1.0)*rim*0.18*d;
+
+        } else {
+          // ---- DEFAULT: rocky / gas-giant procedural (mercury, venus, jupiter, ...) ----
+          vec3 p = nPos * uScale;
+          float n = fbm(p);
+          float r = ridged(p * 1.5);
+          float bands = sin(nPos.y * 14.0 + fbm(p * 2.5) * 2.4) * 0.5 + 0.5;
+          float surface = mix(mix(n, r, uRidges), bands, uBanded);
+          col = mix(uBase, uAccent, smoothstep(0.35, 0.7, surface));
+          float detail = fbm(p * 5.0);
+          col = mix(col, col * 0.7, smoothstep(0.4, 0.7, detail) * 0.4);
+          float pcap = smoothstep(0.78, 0.95, abs(nPos.y) + fbm(p * 3.0) * 0.07) * (1.0 - uBanded * 0.7);
+          col = mix(col, uPolar, pcap);
+          float ndl = max(0.0, dot(vNormal, L));
+          col *= pow(ndl, 0.85) * 0.92 + 0.08;
+          float rim = pow(1.0 - max(0.0, dot(vNormal, V)), 3.0) * (0.25 + uGlow);
+          col += uAccent * rim * 0.6;
+        }
+
         gl_FragColor = vec4(col, 1.0);
       }
     `,
   });
 }
+
+// Thin wrappers so the Mars surface ground-cap (Surface Ops) shares the exact same
+// shader as the orbital globe — colours match the PLANETS rows for Earth/Mars.
+function makeEarthMaterial() { return makePlanetMaterial({ base: 0x1d6dc8, accent: 0x2a8e54, polar: 0xf2f7ff, scale: 4.0, variant: 'earth' }); }
+function makeMarsMaterial() { return makePlanetMaterial({ base: 0xc44a26, accent: 0x6a2412, polar: 0xf6e0c0, scale: 3.6, ridges: true, variant: 'mars' }); }
 
 // Atmospheric fresnel shell — FrontSide so we can compute true view-vs-normal
 // fresnel; bright only at the silhouette where dot(N,V) → 0.
@@ -418,9 +461,11 @@ function makeAtmosphere(radius, color, intensity = 1.0) {
       varying vec3 vWorld;
       void main() {
         vec3 V = normalize(cameraPosition - vWorld);
-        float fres = 1.0 - max(0.0, dot(vNormal, V));
-        fres = pow(fres, 3.5);
-        gl_FragColor = vec4(uColor * fres * uIntensity, fres);
+        vec3 L = normalize(-vWorld);                        // sun at the origin
+        float fres = pow(1.0 - max(0.0, dot(vNormal, V)), 3.0);
+        float lit = smoothstep(-0.25, 0.4, dot(vNormal, L));
+        float a = fres * (0.35 + 0.65 * lit) * uIntensity;
+        gl_FragColor = vec4(uColor * a, a);
       }
     `,
   });
@@ -458,11 +503,11 @@ function makeCloudLayer(radius, color = 0xffffff) {
           vec3 p = normalize(vLocal) * 4.0;
           float n = fbm(p + vec3(uTime * 0.012, 0.0, uTime * 0.005));
           float n2 = fbm(p * 2.5 + vec3(uTime * 0.03));
-          float c = smoothstep(0.55, 0.92, n * 0.7 + n2 * 0.3);
+          float c = smoothstep(0.64, 0.98, n * 0.7 + n2 * 0.3);   // sparse, wispy coverage
           vec3 L = normalize(-vWorld);
           float ndl = max(0.0, dot(vNormal, L));
-          float lighting = ndl * 0.85 + 0.05;
-          gl_FragColor = vec4(uColor * lighting, c * 0.55);
+          float lighting = ndl * 0.65 + 0.04;                     // softer so it doesn't blow out
+          gl_FragColor = vec4(uColor * lighting, c * 0.5);
         }
       `,
     })
@@ -526,17 +571,18 @@ function buildPlanet(p) {
   const mat = makePlanetMaterial({
     base: p.base, accent: p.accent, polar: p.polar, scale: p.scale,
     ridges: p.ridges, banded: p.banded,
+    variant: p.key === 'earth' ? 'earth' : (p.key === 'mars' ? 'mars' : null),
   });
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(p.size, 64, 64), mat);
   tiltGroup.add(mesh);
 
   // Atmosphere for select planets — bright at silhouette, near-transparent at center
-  if (p.key === 'earth')   tiltGroup.add(makeAtmosphere(p.size * 1.12, 0x4ab8ff, 1.6));
-  if (p.key === 'venus')   tiltGroup.add(makeAtmosphere(p.size * 1.16, 0xffd49a, 1.4));
-  if (p.key === 'mars')    tiltGroup.add(makeAtmosphere(p.size * 1.09, 0xff8a4a, 0.9));
+  if (p.key === 'earth') tiltGroup.add(makeAtmosphere(p.size * 1.12, 0x4ab8ff, 1.6));
+  if (p.key === 'venus') tiltGroup.add(makeAtmosphere(p.size * 1.16, 0xffd49a, 1.4));
+  if (p.key === 'mars') tiltGroup.add(makeAtmosphere(p.size * 1.09, 0xff8a4a, 0.9));
   if (p.key === 'jupiter') tiltGroup.add(makeAtmosphere(p.size * 1.05, 0xffd0a0, 0.6));
-  if (p.key === 'saturn')  tiltGroup.add(makeAtmosphere(p.size * 1.04, 0xc8b48a, 0.35));
-  if (p.key === 'uranus')  tiltGroup.add(makeAtmosphere(p.size * 1.10, 0xa0eef0, 0.9));
+  if (p.key === 'saturn') tiltGroup.add(makeAtmosphere(p.size * 1.04, 0xc8b48a, 0.35));
+  if (p.key === 'uranus') tiltGroup.add(makeAtmosphere(p.size * 1.10, 0xa0eef0, 0.9));
   if (p.key === 'neptune') tiltGroup.add(makeAtmosphere(p.size * 1.10, 0x6090ff, 1.0));
 
   // Earth keeps a realistic drifting cloud layer.
