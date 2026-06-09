@@ -509,8 +509,8 @@ function buildEarthMaterial() {
     emissive: new THREE.Color(0xffffff),
     emissiveMap: loadTex('earth_lights_2048.png', { srgb: true }),
     emissiveIntensity: 1.0,
-    normalScale: new THREE.Vector2(0.8, 0.8),
-    envMapIntensity: 0.2,
+    normalScale: new THREE.Vector2(1.15, 1.15),   // deeper terrain relief
+    envMapIntensity: 0.32,
   });
   const sunDir = { value: new THREE.Vector3().copy(SUN_DIR) };
   mat.userData.sunDirRef = sunDir;   // animate loop updates this each frame
@@ -523,7 +523,7 @@ function buildEarthMaterial() {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\n  uniform vec3 uSunDir;\n  uniform float uNight;\n  varying vec3 vEarthWN;')
       .replace('#include <roughnessmap_fragment>',
-        '#include <roughnessmap_fragment>\n  roughnessFactor = mix(0.92, 0.10, texture2D(roughnessMap, vRoughnessMapUv).g);')   // oceans smooth (glint), land rough
+        '#include <roughnessmap_fragment>\n  roughnessFactor = mix(0.95, 0.12, texture2D(roughnessMap, vRoughnessMapUv).g);')   // oceans smooth (soft glint), land rough
       .replace('#include <emissivemap_fragment>',
         '#include <emissivemap_fragment>\n  totalEmissiveRadiance *= smoothstep(0.12, -0.25, dot(normalize(vEarthWN), normalize(uSunDir))) * uNight;');   // city lights on the night side only
   };
@@ -567,9 +567,11 @@ function makeAtmosphere(radius, color, intensity = 1.0) {
       void main() {
         vec3 V = normalize(cameraPosition - vWorld);
         vec3 L = normalize(-vWorld);                        // sun at the origin
-        float fres = pow(1.0 - max(0.0, dot(vNormal, V)), 3.0);
-        float lit = smoothstep(-0.25, 0.4, dot(vNormal, L));
-        float a = fres * (0.35 + 0.65 * lit) * uIntensity;
+        float vdn = max(0.0, dot(vNormal, V));
+        float fres = pow(1.0 - vdn, 2.4);                   // wider, softer limb halo
+        float lit = smoothstep(-0.35, 0.45, dot(vNormal, L));
+        float fwd = pow(max(0.0, dot(V, -L)), 2.5);         // forward-scatter brightening toward the sun
+        float a = fres * (0.28 + 0.72 * lit) * uIntensity * (1.0 + 0.7 * fwd);
         gl_FragColor = vec4(uColor * a, a);
       }
     `,
@@ -704,7 +706,7 @@ function buildPlanet(p) {
   tiltGroup.add(mesh);
 
   // Atmosphere for select planets — bright at silhouette, near-transparent at center
-  if (p.key === 'earth') tiltGroup.add(makeAtmosphere(p.size * 1.12, 0x4ab8ff, 1.6));
+  if (p.key === 'earth') tiltGroup.add(makeAtmosphere(p.size * 1.15, 0x5aa6ff, 1.9));
   if (p.key === 'venus') tiltGroup.add(makeAtmosphere(p.size * 1.16, 0xffd49a, 1.4));
   if (p.key === 'mars') tiltGroup.add(makeAtmosphere(p.size * 1.09, 0xff8a4a, 0.9));
   if (p.key === 'jupiter') tiltGroup.add(makeAtmosphere(p.size * 1.05, 0xffd0a0, 0.6));
@@ -1154,7 +1156,7 @@ const PAD = E_POS.clone().addScaledVector(LAUNCH_N, E_R);                       
 // effects are all built at this fraction so the vehicle reads as a realistic speck against
 // the fixed-size Earth (radius E_R = 1.7) rather than a planet-sized object. Earth never
 // changes; only the launch rig shrinks. Drop LS to make the rocket smaller vs Earth.
-const LS = 0.22;
+const LS = 0.15;
 const LAUNCH_MAXALT = 3.5 * LS, LAUNCH_RANGE = 3.5 * LS, ROCKET_BASE = 0.5 * LS;  // ascent shaping (scene units)
 // Shared launch + EDL event timelines (progress u in [0,1]) so motion, plume, camera
 // and telemetry stay in sync.
@@ -1310,39 +1312,54 @@ const launchCurve = new THREE.CatmullRomCurve3([
 // capsule, with a layered exhaust flame. Parts stored in userData.
 function buildRocket() {
   const g = new THREE.Group();
-  const body = new THREE.MeshStandardMaterial({ color: 0xd9dee3, metalness: 0.6, roughness: 0.44, normalMap: PANEL_N, normalScale: new THREE.Vector2(0.6, 0.6), emissive: 0x141a26, emissiveIntensity: 0.12 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x39424f, metalness: 0.7, roughness: 0.4 });
-  const black = new THREE.MeshStandardMaterial({ color: 0x15181d, metalness: 0.6, roughness: 0.55 });
-  const cyan = new THREE.MeshBasicMaterial({ color: 0x6ff1ff });
+  const body = new THREE.MeshStandardMaterial({ color: 0xeef1f5, metalness: 0.42, roughness: 0.52, normalMap: PANEL_N, normalScale: new THREE.Vector2(0.4, 0.4), emissive: 0x0e1420, emissiveIntensity: 0.10 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2b323c, metalness: 0.82, roughness: 0.38 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x14171c, metalness: 0.5, roughness: 0.6 });
+  const soot = new THREE.MeshStandardMaterial({ color: 0x4c483f, metalness: 0.55, roughness: 0.72 });   // scorched lower booster
+  const cyan = new THREE.MeshBasicMaterial({ color: 0x9fe9ff });
+  const R = 0.34;   // slimmer, modern proportions (was 0.42)
 
-  // First stage (separable)
+  // First stage (separable) — slender tank, scorched skirt, octaweb engines, folded grid fins + legs
   const stage1 = new THREE.Group();
-  const s1 = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 3.0, 24), body); s1.position.y = -1.0; stage1.add(s1);
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.43, 0.28, 24), black); band.position.y = 0.2; stage1.add(band);
-  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.52, 0.45, 24), dark); skirt.position.y = -2.55; stage1.add(skirt);
-  for (let i = 0; i < 5; i++) {
-    const a = i === 4 ? 0 : (i / 4) * TAU, r = i === 4 ? 0 : 0.27;
-    const noz = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.36, 12), black);
-    noz.position.set(Math.cos(a) * r, -2.95, Math.sin(a) * r); stage1.add(noz);
+  const s1 = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 3.0, 28), body); s1.position.y = -1.0; stage1.add(s1);
+  const sootBand = new THREE.Mesh(new THREE.CylinderGeometry(R * 1.006, R * 1.006, 0.95, 28), soot); sootBand.position.y = -2.05; stage1.add(sootBand);
+  const stripe = new THREE.Mesh(new THREE.CylinderGeometry(R * 1.012, R * 1.012, 0.16, 28), black); stripe.position.y = 0.25; stage1.add(stripe);
+  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 1.16, 0.42, 28), dark); skirt.position.y = -2.62; stage1.add(skirt);
+  // octaweb: 8 ring engines + 1 centre
+  for (let i = 0; i < 9; i++) {
+    const center = i === 8, a = (i / 8) * TAU, r = center ? 0 : R * 0.58;
+    const noz = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.095, 0.34, 12), black);
+    noz.position.set(Math.cos(a) * r, -2.98, Math.sin(a) * r); stage1.add(noz);
   }
+  // folded grid fins near the top of the booster
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * TAU + Math.PI / 4;
+    const gf = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 0.035), dark);
+    gf.position.set(Math.cos(a) * (R + 0.02), 0.7, Math.sin(a) * (R + 0.02));
+    gf.lookAt(gf.position.clone().setY(0.7).multiplyScalar(2)); stage1.add(gf);
+  }
+  // folded landing legs hugging the base
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * TAU;
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.8, 0.5), dark);
-    fin.position.set(Math.cos(a) * 0.46, -2.3, Math.sin(a) * 0.46); fin.rotation.y = -a; stage1.add(fin);
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.2, 0.10), dark);
+    leg.position.set(Math.cos(a) * (R + 0.03), -2.0, Math.sin(a) * (R + 0.03));
+    leg.rotation.y = -a; leg.rotation.x = 0.05; stage1.add(leg);
   }
   g.add(stage1);
 
-  // Upper stage + capsule (continues after staging)
+  // Upper stage + payload (continues after staging) — interstage, vacuum bell, capsule windows
   const upper = new THREE.Group();
-  const inter = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.42, 0.32, 24), dark); inter.position.y = 0.7; upper.add(inter);
-  const s2 = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.4, 1.5, 24), body); s2.position.y = 1.65; upper.add(s2);
-  const win = new THREE.Mesh(new THREE.TorusGeometry(0.39, 0.04, 8, 24), cyan); win.position.y = 2.0; win.rotation.x = Math.PI / 2; upper.add(win);
-  // Payload fairing on its own (cloned) material so it can be faded + jettisoned without
-  // affecting the rest of the body.
+  const inter = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.96, R, 0.34, 28), black); inter.position.y = 0.7; upper.add(inter);
+  const vac = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.20, 0.46, 16, 1, true), dark); vac.position.y = 0.5; upper.add(vac);   // vacuum engine bell
+  const s2 = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.9, R * 0.96, 1.5, 28), body); s2.position.y = 1.65; upper.add(s2);
+  const win = new THREE.Mesh(new THREE.TorusGeometry(R * 0.9, 0.035, 8, 28), cyan); win.position.y = 2.0; win.rotation.x = Math.PI / 2; upper.add(win);
+  // Payload fairing on its own (cloned) material so it can be faded + jettisoned independently.
+  // Ogive nose for a believable aerodynamic profile.
   const fairMat = body.clone();
   const fairing = new THREE.Group();
-  const fair = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.38, 1.0, 24), fairMat); fair.position.y = 2.95; fairing.add(fair);
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.5, 18), fairMat); tip.position.y = 3.7; fairing.add(tip);
+  const fairBase = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.66, R * 0.9, 0.85, 28), fairMat); fairBase.position.y = 2.95; fairing.add(fairBase);
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(R * 0.66, 24, 16, 0, TAU, 0, Math.PI * 0.5), fairMat);
+  tip.scale.y = 2.0; tip.position.y = 3.38; fairing.add(tip);
   upper.add(fairing);
   g.add(upper);
 
@@ -1372,21 +1389,25 @@ function buildRocket() {
 // space as it tumbles back down toward Earth after staging. Scaled to match buildRocket.
 function buildSpentStage() {
   const g = new THREE.Group();
-  const body = new THREE.MeshStandardMaterial({ color: 0xd9dee3, metalness: 0.6, roughness: 0.44, normalMap: PANEL_N, normalScale: new THREE.Vector2(0.6, 0.6), emissive: 0x141a26, emissiveIntensity: 0.12 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x39424f, metalness: 0.7, roughness: 0.4 });
-  const black = new THREE.MeshStandardMaterial({ color: 0x15181d, metalness: 0.6, roughness: 0.55 });
-  const s1 = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 3.0, 24), body); s1.position.y = -1.0; g.add(s1);
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.43, 0.28, 24), black); band.position.y = 0.2; g.add(band);
-  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.52, 0.45, 24), dark); skirt.position.y = -2.55; g.add(skirt);
-  for (let i = 0; i < 5; i++) {
-    const a = i === 4 ? 0 : (i / 4) * TAU, r = i === 4 ? 0 : 0.27;
-    const noz = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.36, 12), black);
-    noz.position.set(Math.cos(a) * r, -2.95, Math.sin(a) * r); g.add(noz);
+  const body = new THREE.MeshStandardMaterial({ color: 0xeef1f5, metalness: 0.42, roughness: 0.52, normalMap: PANEL_N, normalScale: new THREE.Vector2(0.4, 0.4), emissive: 0x0e1420, emissiveIntensity: 0.10 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2b323c, metalness: 0.82, roughness: 0.38 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x14171c, metalness: 0.5, roughness: 0.6 });
+  const soot = new THREE.MeshStandardMaterial({ color: 0x4c483f, metalness: 0.55, roughness: 0.72 });
+  const R = 0.34;
+  const s1 = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 3.0, 28), body); s1.position.y = -1.0; g.add(s1);
+  const sootBand = new THREE.Mesh(new THREE.CylinderGeometry(R * 1.006, R * 1.006, 0.95, 28), soot); sootBand.position.y = -2.05; g.add(sootBand);
+  const stripe = new THREE.Mesh(new THREE.CylinderGeometry(R * 1.012, R * 1.012, 0.16, 28), black); stripe.position.y = 0.25; g.add(stripe);
+  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 1.16, 0.42, 28), dark); skirt.position.y = -2.62; g.add(skirt);
+  for (let i = 0; i < 9; i++) {
+    const center = i === 8, a = (i / 8) * TAU, r = center ? 0 : R * 0.58;
+    const noz = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.095, 0.34, 12), black);
+    noz.position.set(Math.cos(a) * r, -2.98, Math.sin(a) * r); g.add(noz);
   }
   for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * TAU;
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.8, 0.5), dark);
-    fin.position.set(Math.cos(a) * 0.46, -2.3, Math.sin(a) * 0.46); fin.rotation.y = -a; g.add(fin);
+    const a = (i / 4) * TAU + Math.PI / 4;
+    const gf = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 0.035), dark);
+    gf.position.set(Math.cos(a) * (R + 0.02), 0.7, Math.sin(a) * (R + 0.02));
+    gf.lookAt(gf.position.clone().setY(0.7).multiplyScalar(2)); g.add(gf);
   }
   g.scale.setScalar(0.10 * LS);
   return g;
@@ -1961,6 +1982,7 @@ function updateLaunch(u) {
 
   // Air-pressure proxy (drops with altitude) drives plume shape + sky fade.
   const alt = altOf(u);
+  const altFrac = alt / LAUNCH_MAXALT;   // 0..~0.85 — scale-independent altitude for the smoke/trail fades
   const H = LAUNCH_MAXALT * 0.42, atmP = Math.exp(-alt / H);
   const throttle = 1 - 0.34 * Math.exp(-Math.pow((u - EV.maxQ) / 0.06, 2));   // max-Q throttle-down
   const flick = 0.85 + Math.sin(elapsed * 42) * 0.15;
@@ -2030,8 +2052,8 @@ function updateLaunch(u) {
         const burst = clamp01((u - EV.sep) / 0.06);
         voyage.frost.visible = burst > 0 && burst < 1;
         voyage.frost.userData.parts.forEach(p => {
-          p.position.copy(sepPos).addScaledVector(p.userData.dir, burst * p.userData.speed * 1.1 * LS);
-          p.material.opacity = (1 - burst) * 0.7; p.scale.setScalar(p.userData.size * (1 + burst) * LS);
+          p.position.copy(sepPos).addScaledVector(p.userData.dir, burst * p.userData.speed * 0.5 * LS);
+          p.material.opacity = (1 - burst) * 0.45; p.scale.setScalar(p.userData.size * (1 + burst) * LS);
         });
       }
     } else {
@@ -2050,8 +2072,8 @@ function updateLaunch(u) {
     sp.position.copy(PAD).addScaledVector(LAUNCH_N, colTop * f).addScaledVector(LAUNCH_T1, rng * colFrac * f);
     const heat = f * f;
     sp.material.color.setRGB(1, 0.55 + heat * 0.4, 0.42 + heat * 0.35);
-    sp.material.opacity = (0.2 + (1 - f) * 0.5) * (0.5 + u * 0.5) * (staged ? 0.3 : 1) * clamp01(1.35 - alt * 0.55);
-    sp.scale.setScalar((0.5 + (1 - f) * 1.2) * LS);
+    sp.material.opacity = (0.2 + (1 - f) * 0.5) * (0.5 + u * 0.5) * (staged ? 0.3 : 1) * clamp01(1.15 - altFrac * 2.6);
+    sp.scale.setScalar((0.3 + (1 - f) * 0.8) * LS);   // smaller puffs so the contrail doesn't read as bubbles
   });
 
   // Liftoff ground cloud: each puff erupts (staggered), then billows out + up and
@@ -2071,7 +2093,7 @@ function updateLaunch(u) {
       .addScaledVector(LAUNCH_N, lift * LS);
     const warm = clamp01(1 - life * 1.8) * clamp01(1 - lift * 0.7);  // engine glow only at the base, early
     sp.material.color.setRGB(0.62 + warm * 0.36, 0.6 + warm * 0.16, 0.58);  // smoke grey, warming to tan at the root
-    sp.material.opacity = (0.5 - life * 0.3) * clamp01(1.3 - alt * 0.2);
+    sp.material.opacity = (0.5 - life * 0.3) * clamp01(1.2 - altFrac * 1.6);
     sp.scale.setScalar(d.size * (0.55 + life * 1.4) * LS);  // expands modestly as it ages
   });
 
@@ -2600,7 +2622,7 @@ function startVoyage() {
       transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0,
     }));
     voyage.boosterGlow.visible = false; scene.add(voyage.boosterGlow);   // spent-stage reentry glow
-    voyage.frost = buildParticles(26, 0xdff0ff, true, 0.05, 0.17);   // ice/gas at staging
+    voyage.frost = buildParticles(14, 0xdff0ff, true, 0.025, 0.07);   // ice/gas at staging — subtle wisp
     scene.add(voyage.frost);
     voyage.dust = buildParticles(40, 0xc98f63, false, 0.18, 0.5);    // dust at touchdown
     scene.add(voyage.dust);
