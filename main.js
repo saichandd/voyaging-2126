@@ -1150,7 +1150,12 @@ const LAUNCH_N = new THREE.Vector3(-0.5, 0.55, 0.67).normalize();              /
 const LAUNCH_T1 = new THREE.Vector3().crossVectors(LAUNCH_N, UP).normalize();  // downrange / gravity-turn axis
 const LAUNCH_T2 = new THREE.Vector3().crossVectors(LAUNCH_T1, LAUNCH_N).normalize();
 const PAD = E_POS.clone().addScaledVector(LAUNCH_N, E_R);                       // pad point on Earth's surface
-const LAUNCH_MAXALT = 3.5, LAUNCH_RANGE = 3.5, ROCKET_BASE = 0.5;              // ascent shaping (scene units)
+// Launch-rig scale. The rocket, its whole trajectory, the chase cameras and the exhaust
+// effects are all built at this fraction so the vehicle reads as a realistic speck against
+// the fixed-size Earth (radius E_R = 1.7) rather than a planet-sized object. Earth never
+// changes; only the launch rig shrinks. Drop LS to make the rocket smaller vs Earth.
+const LS = 0.22;
+const LAUNCH_MAXALT = 3.5 * LS, LAUNCH_RANGE = 3.5 * LS, ROCKET_BASE = 0.5 * LS;  // ascent shaping (scene units)
 // Shared launch + EDL event timelines (progress u in [0,1]) so motion, plume, camera
 // and telemetry stay in sync.
 const EV = { hold: 0.025, tower: 0.06, roll: 0.09, pitch: 0.15, maxQ: 0.25, meco: 0.46, sep: 0.49, ign2: 0.54, fairing: 0.63, tilt: 0.80, seco: 0.96 };
@@ -1270,7 +1275,7 @@ function buildLaunchPad() {
   for (let j = 1; j < 8; j++) { const cr = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.46), steel); cr.position.y = j * 0.44; tower.add(cr); }
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.12), steel); arm.position.set(-0.45, 3.1, 0); tower.add(arm);
   g.add(tower);
-  g.scale.setScalar(0.19);
+  g.scale.setScalar(0.19 * LS);
   return g;
 }
 function buildLaunchSky() {
@@ -1359,7 +1364,7 @@ function buildRocket() {
   const light = new THREE.PointLight(0xffcaa0, 1.5, 9, 2); light.position.y = -2.6; g.add(light);
 
   g.userData = { stage1, upper, flameGrp, core, outer, glow, light, fairing };
-  g.scale.setScalar(0.10);
+  g.scale.setScalar(0.10 * LS);
   return g;
 }
 
@@ -1383,7 +1388,7 @@ function buildSpentStage() {
     const fin = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.8, 0.5), dark);
     fin.position.set(Math.cos(a) * 0.46, -2.3, Math.sin(a) * 0.46); fin.rotation.y = -a; g.add(fin);
   }
-  g.scale.setScalar(0.10);
+  g.scale.setScalar(0.10 * LS);
   return g;
 }
 
@@ -1988,8 +1993,8 @@ function updateLaunch(u) {
     const q = Math.exp(-Math.pow((u - EV.maxQ) / 0.05, 2));
     voyage.vaporCone.visible = q > 0.02 && !staged;
     voyage.vaporCone.material.opacity = 0.8 * q;
-    voyage.vaporCone.scale.setScalar(0.6 + 0.7 * q);
-    voyage.vaporCone.position.copy(pos).addScaledVector(vel, 0.1);
+    voyage.vaporCone.scale.setScalar((0.6 + 0.7 * q) * LS);
+    voyage.vaporCone.position.copy(pos).addScaledVector(vel, 0.1 * LS);
   }
 
   // Fairing jettison after second-stage ignition.
@@ -2008,25 +2013,25 @@ function updateLaunch(u) {
     if (staged) {
       const sepPos = sitePos(EV.sep);
       voyage.spentStage.position.copy(sepPos)
-        .addScaledVector(vel, fall * 0.8)
-        .addScaledVector(LAUNCH_N, -(fall * fall) * 6.0)
-        .addScaledVector(LAUNCH_T1, fall * 0.5);
+        .addScaledVector(vel, fall * 0.8 * LS)
+        .addScaledVector(LAUNCH_N, -(fall * fall) * 6.0 * LS)
+        .addScaledVector(LAUNCH_T1, fall * 0.5 * LS);
       voyage.spentStage.quaternion.setFromUnitVectors(UP, LAUNCH_N);
       voyage.spentStage.rotateX(fall * 4.0); voyage.spentStage.rotateZ(fall * 2.2);
       if (voyage.boosterGlow) {
         // Entry-heating glow: flares as it bites into the air, then fades as it descends home.
         const heat = clamp01((fall - 0.18) / 0.16) * clamp01((0.82 - fall) / 0.25);
         voyage.boosterGlow.visible = heat > 0.02;
-        voyage.boosterGlow.position.copy(voyage.spentStage.position).addScaledVector(LAUNCH_N, -0.08);
+        voyage.boosterGlow.position.copy(voyage.spentStage.position).addScaledVector(LAUNCH_N, -0.08 * LS);
         voyage.boosterGlow.material.opacity = heat * 0.85;
-        voyage.boosterGlow.scale.setScalar(0.4 + fall * 0.7);
+        voyage.boosterGlow.scale.setScalar((0.4 + fall * 0.7) * LS);
       }
       if (voyage.frost) {
         const burst = clamp01((u - EV.sep) / 0.06);
         voyage.frost.visible = burst > 0 && burst < 1;
         voyage.frost.userData.parts.forEach(p => {
-          p.position.copy(sepPos).addScaledVector(p.userData.dir, burst * p.userData.speed * 1.1);
-          p.material.opacity = (1 - burst) * 0.7; p.scale.setScalar(p.userData.size * (1 + burst));
+          p.position.copy(sepPos).addScaledVector(p.userData.dir, burst * p.userData.speed * 1.1 * LS);
+          p.material.opacity = (1 - burst) * 0.7; p.scale.setScalar(p.userData.size * (1 + burst) * LS);
         });
       }
     } else {
@@ -2037,7 +2042,7 @@ function updateLaunch(u) {
 
   // Exhaust/smoke: a dense column near the pad that lingers as the rocket climbs away.
   const rng = rngOf(u);
-  const colTop = Math.min(alt + ROCKET_BASE, 3.2);
+  const colTop = Math.min(alt + ROCKET_BASE, 3.2 * LS);
   const colFrac = colTop / Math.max(0.001, alt + ROCKET_BASE);
   const puffs = voyage.launchTrail.userData.puffs;
   puffs.forEach((sp, i) => {
@@ -2046,7 +2051,7 @@ function updateLaunch(u) {
     const heat = f * f;
     sp.material.color.setRGB(1, 0.55 + heat * 0.4, 0.42 + heat * 0.35);
     sp.material.opacity = (0.2 + (1 - f) * 0.5) * (0.5 + u * 0.5) * (staged ? 0.3 : 1) * clamp01(1.35 - alt * 0.55);
-    sp.scale.setScalar(0.5 + (1 - f) * 1.2);
+    sp.scale.setScalar((0.5 + (1 - f) * 1.2) * LS);
   });
 
   // Liftoff ground cloud: each puff erupts (staggered), then billows out + up and
@@ -2061,13 +2066,13 @@ function updateLaunch(u) {
     const spread = (0.25 + life * 0.9) * (0.5 + d.rad * 0.5);  // clusters at the pad, billows out modestly
     const lift = 0.12 + life * (0.45 + d.rise * 1.15);         // piles up into a billowing mound at the base
     sp.position.copy(PAD)
-      .addScaledVector(LAUNCH_T1, Math.cos(d.ang) * spread)
-      .addScaledVector(LAUNCH_T2, Math.sin(d.ang) * spread)
-      .addScaledVector(LAUNCH_N, lift);
+      .addScaledVector(LAUNCH_T1, Math.cos(d.ang) * spread * LS)
+      .addScaledVector(LAUNCH_T2, Math.sin(d.ang) * spread * LS)
+      .addScaledVector(LAUNCH_N, lift * LS);
     const warm = clamp01(1 - life * 1.8) * clamp01(1 - lift * 0.7);  // engine glow only at the base, early
     sp.material.color.setRGB(0.62 + warm * 0.36, 0.6 + warm * 0.16, 0.58);  // smoke grey, warming to tan at the root
     sp.material.opacity = (0.5 - life * 0.3) * clamp01(1.3 - alt * 0.2);
-    sp.scale.setScalar(d.size * (0.55 + life * 1.4));        // expands modestly as it ages
+    sp.scale.setScalar(d.size * (0.55 + life * 1.4) * LS);  // expands modestly as it ages
   });
 
   // Sky fades to space with the thinning atmosphere.
@@ -2083,32 +2088,32 @@ function updateLaunch(u) {
   if (u < CRANE) {                             // continuous pull-back from the pad — the curvature is revealed
     const r = clamp01(u / CRANE);              // by the camera physically retreating, not a fade
     const ease = r * r * (3 - 2 * r);          // smoothstep the move
-    const eye = 0.3 + ease * 3.4;              // rise from near eye-height to a high vantage above the pad
-    const back = 2.0 + ease * 5.2;             // and steadily pull back so Earth's limb curves into frame
-    camP = PAD.clone().addScaledVector(up, eye).addScaledVector(fwd, -back).addScaledVector(side, -2.0 - ease * 1.6);
-    lookP = pos.clone().addScaledVector(up, 0.3 * (1 - ease));   // hold the rocket centred as we retreat
+    const eye = (0.3 + ease * 3.4) * LS;       // rise from near eye-height to a high vantage above the pad
+    const back = (2.0 + ease * 5.2) * LS;      // and steadily pull back so Earth's limb curves into frame
+    camP = PAD.clone().addScaledVector(up, eye).addScaledVector(fwd, -back).addScaledVector(side, (-2.0 - ease * 1.6) * LS);
+    lookP = pos.clone().addScaledVector(up, 0.3 * (1 - ease) * LS);   // hold the rocket centred as we retreat
     fov = 50 - ease * 8;
   } else if (u < EV.maxQ) {                    // downrange tracking pedestal — rocket climbing against curved Earth
-    camP = pos.clone().addScaledVector(side, 3.4).addScaledVector(up, 0.4).addScaledVector(fwd, -1.8);
-    lookP = pos.clone().addScaledVector(vel, 1.0); fov = 40;
+    camP = pos.clone().addScaledVector(side, 3.4 * LS).addScaledVector(up, 0.4 * LS).addScaledVector(fwd, -1.8 * LS);
+    lookP = pos.clone().addScaledVector(vel, 1.0 * LS); fov = 40;
   } else if (u < EV.meco) {                    // long-lens chase through max-Q and the high climb
-    camP = pos.clone().addScaledVector(side, 2.6).addScaledVector(up, 0.2).addScaledVector(fwd, -0.7);
-    lookP = pos.clone().addScaledVector(up, 0.5); fov = 34;
+    camP = pos.clone().addScaledVector(side, 2.6 * LS).addScaledVector(up, 0.2 * LS).addScaledVector(fwd, -0.7 * LS);
+    lookP = pos.clone().addScaledVector(up, 0.5 * LS); fov = 34;
   } else if (u < EV.ign2) {                    // MECO + staging: pull back so the booster is seen falling away
-    camP = pos.clone().addScaledVector(side, 3.0).addScaledVector(up, 0.7).addScaledVector(fwd, -2.2);
-    lookP = pos.clone().addScaledVector(up, -0.7); fov = 38;   // frame the gap between the stages
+    camP = pos.clone().addScaledVector(side, 3.0 * LS).addScaledVector(up, 0.7 * LS).addScaledVector(fwd, -2.2 * LS);
+    lookP = pos.clone().addScaledVector(up, -0.7 * LS); fov = 38;   // frame the gap between the stages
   } else if (u < EV.fairing) {                 // second-stage ignition: tight on the upper stage lighting
-    camP = pos.clone().addScaledVector(side, 2.0).addScaledVector(up, 0.5).addScaledVector(fwd, -1.1);
-    lookP = pos.clone().addScaledVector(up, -0.2); fov = 40;
+    camP = pos.clone().addScaledVector(side, 2.0 * LS).addScaledVector(up, 0.5 * LS).addScaledVector(fwd, -1.1 * LS);
+    lookP = pos.clone().addScaledVector(up, -0.2 * LS); fov = 40;
   } else if (u < 0.72) {                       // fairing jettison: side-quarter angle to catch the halves splitting
-    camP = pos.clone().addScaledVector(side, 1.8).addScaledVector(up, 0.7).addScaledVector(fwd, 0.7);
-    lookP = pos.clone().addScaledVector(up, 0.1); fov = 44;
+    camP = pos.clone().addScaledVector(side, 1.8 * LS).addScaledVector(up, 0.7 * LS).addScaledVector(fwd, 0.7 * LS);
+    lookP = pos.clone().addScaledVector(up, 0.1 * LS); fov = 44;
   } else if (u < EV.seco) {                    // ascent to orbit: the climbing stage high over Earth's curving limb
-    camP = pos.clone().addScaledVector(side, 4.4).addScaledVector(up, 1.4).addScaledVector(fwd, -2.0);
-    lookP = pos.clone().addScaledVector(up, -2.5).addScaledVector(fwd, -2.0); fov = 54;   // tilt down to Earth below
+    camP = pos.clone().addScaledVector(side, 4.4 * LS).addScaledVector(up, 1.4 * LS).addScaledVector(fwd, -2.0 * LS);
+    lookP = pos.clone().addScaledVector(up, -2.5 * LS).addScaledVector(fwd, -2.0 * LS); fov = 54;   // tilt down to Earth below
   } else {                                     // SECO / orbit: close on the now-coasting stage, sunlit, Earth behind
-    camP = pos.clone().addScaledVector(side, 2.2).addScaledVector(up, 0.5).addScaledVector(fwd, -1.2);
-    lookP = pos.clone().addScaledVector(up, -0.6).addScaledVector(fwd, -0.2); fov = 46;
+    camP = pos.clone().addScaledVector(side, 2.2 * LS).addScaledVector(up, 0.5 * LS).addScaledVector(fwd, -1.2 * LS);
+    lookP = pos.clone().addScaledVector(up, -0.6 * LS).addScaledVector(fwd, -0.2 * LS); fov = 46;
   }
   return { pos: camP, look: lookP, fov, up: LAUNCH_N };
 }
