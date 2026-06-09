@@ -1171,6 +1171,18 @@ const APPROACH_CALLOUTS = [
   { at: 0.78, tag: 'PARKING ORBIT', text: 'In orbit at last. The red world fills the windows; the landing shuttle is powered up.' },
   { at: 0.90, tag: 'UNDOCK PREP', text: 'The crew boards the shuttle. Final checks before separating for the descent.' },
 ];
+// Descent & Landing flight-log: from undock in orbit to dust-settling touchdown.
+const EDL_CALLOUTS = [
+  { at: 0.00, tag: 'UNDOCK', text: 'Separation — the shuttle releases from the Endurance and drops away toward the surface.' },
+  { at: 0.07, tag: 'DEORBIT', text: 'Deorbit burn — committing to the descent. There is no turning back now.' },
+  { at: 0.13, tag: 'ENTRY INTERFACE', text: 'Entry interface — meeting the thin Martian air at thousands of kilometres an hour.' },
+  { at: 0.19, tag: 'PEAK HEATING', text: 'Peak heating — a sheath of plasma wraps the heat shield, glowing orange.' },
+  { at: 0.34, tag: 'AEROBRAKE', text: 'The atmosphere does the braking — far thinner than Earth’s, but enough to bleed speed.' },
+  { at: 0.52, tag: 'PITCH UP', text: 'Pitching upright, engines swinging down for the powered descent.' },
+  { at: 0.66, tag: 'RETRO BURN', text: 'Retro burn — the engines light to kill the last of the velocity.' },
+  { at: 0.85, tag: 'FINAL DESCENT', text: 'Throttling down, feeling for the ground. Landing legs deployed.' },
+  { at: 0.97, tag: 'TOUCHDOWN', text: 'Touchdown on Mars. The dust settles. After eight months — you have arrived.' },
+];
 const EDL = { ENTRY: 0.16, AERO: 0.42, PITCH: 0.55, BURN: 0.62, TOUCH: 0.965 };
 
 function earthGroundTexture(s = 1024) {
@@ -1744,7 +1756,7 @@ const PHASES = [
     ]
   },
   {
-    key: 'edl', label: '04 · DESCENT & LANDING', short: 'DESCENT & LANDING', dur: 20, mode: 'edl', s0: 0.94, s1: 1.0,
+    key: 'edl', label: '04 · DESCENT & LANDING', short: 'DESCENT & LANDING', dur: 80, mode: 'edl', s0: 0.94, s1: 1.0,
     tag: 'STAGE 04 · DESCENT & LANDING',
     facts: [
       'shuttle undocks from the Mothership.',
