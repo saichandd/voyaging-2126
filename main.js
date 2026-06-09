@@ -2225,7 +2225,7 @@ function updateHelio(ph, u, dt) {
     const sd = voyage.ship.userData;
     const docked = st.pos.clone().addScaledVector(fwd, 1.5);
     if (ph.key === 'cruise') {
-      const dockT = clamp01(u / 0.24);
+      const dockT = clamp01(u / 0.10);
       const appr = Math.pow(1 - dockT, 1.4);              // 1 = approaching, 0 = docked
       const side = new THREE.Vector3().crossVectors(fwd, UP).normalize();
       voyage.ship.position.copy(docked)
@@ -2338,10 +2338,22 @@ function updateTelemetry(ph, u, s) {
     vEls['v-dist'].textContent = `${st.rAU.toFixed(2)} AU`;
     // Cruise opens with the docking maneuver, then engines-off coast on the ellipse.
     let eng = '○ OFF', warn = false;
-    if (ph.key === 'cruise' && u < 0.24) { eng = '◐ DOCKING'; warn = true; }
+    if (ph.key === 'cruise' && u < 0.10) { eng = '◐ DOCKING'; warn = true; }
     else if (ph.burn) { eng = '● BURN'; warn = true; }
     vEls['v-engine'].textContent = eng;
     vEls['v-engine'].className = warn ? 'warn' : '';
+    // Progressive cruise flight-log: reveal callouts as the coast unfolds, newest highlighted.
+    if (ph.key === 'cruise') {
+      let ci = 0; for (let i = 0; i < CRUISE_CALLOUTS.length; i++) if (u >= CRUISE_CALLOUTS[i].at) ci = i;
+      if (ci !== voyage._lastCallout) {
+        voyage._lastCallout = ci;
+        const start = Math.max(0, ci - 3);
+        vEls['v-notes'].innerHTML = CRUISE_CALLOUTS.slice(start, ci + 1).map((c, k) => {
+          const cur = (start + k) === ci;
+          return `<div class="note"${cur ? ' style="opacity:1"' : ' style="opacity:0.5"'}>› <b>${c.tag}.</b> ${c.text}</div>`;
+        }).join('');
+      }
+    }
   }
 }
 
