@@ -1150,6 +1150,18 @@ const LAUNCH_CALLOUTS = [
   { at: 0.80, tag: 'ASCENT', text: 'Above 200 km, building toward 28,000 km/h — nearly orbital velocity.' },
   { at: 0.96, tag: 'SECO · ORBIT', text: 'SECO — engines off. The push is over. You are weightless, in orbit.' },
 ];
+// Cruise flight-log: the eight-month coast to Mars, surfaced as the journey unfolds.
+const CRUISE_CALLOUTS = [
+  { at: 0.00, tag: 'RENDEZVOUS', text: 'Closing on the Endurance — the interplanetary mothership already waiting in orbit.' },
+  { at: 0.09, tag: 'DOCKED', text: 'Soft capture, hard dock. The crew transfers aboard for the long ride to Mars.' },
+  { at: 0.20, tag: 'SPIN-UP', text: 'The habitat ring spins up — centrifugal force stands in for gravity so muscles and bone hold.' },
+  { at: 0.34, tag: 'LIFE ABOARD', text: 'Frozen and dried food; all water — even urine — recycled. A game area to pass the months.' },
+  { at: 0.46, tag: 'TRANS-MARS', text: 'Engines off. We coast a Hohmann transfer — a free-fall arc around the Sun, eight months long.' },
+  { at: 0.60, tag: 'DEEP SPACE', text: 'Earth is a blue point behind us now; some 480 million km of emptiness lie ahead.' },
+  { at: 0.72, tag: 'COMMS LAG', text: 'A call home already takes minutes each way — and grows longer with every passing day.' },
+  { at: 0.84, tag: 'KEPLER II', text: "Watch the speed bleed off as we climb away from the Sun — Kepler's 2nd law, made visible." },
+  { at: 0.93, tag: 'MARS AHEAD', text: 'Mars brightens from a star into a disc dead ahead. Arrival is near.' },
+];
 const EDL = { ENTRY: 0.16, AERO: 0.42, PITCH: 0.55, BURN: 0.62, TOUCH: 0.965 };
 
 function earthGroundTexture(s = 1024) {
@@ -1705,7 +1717,7 @@ const PHASES = [
     ]
   },
   {
-    key: 'cruise', label: '02 · CRUISE', short: 'CRUISE', dur: 48, mode: 'helio', s0: 0.03, s1: 0.78, view: 'endurance',
+    key: 'cruise', label: '02 · CRUISE', short: 'CRUISE', dur: 140, mode: 'helio', s0: 0.03, s1: 0.78, view: 'endurance',
     tag: 'STAGE 02 · CRUISE',
     facts: [
       'dock with the interplanetary mothership. already placed.',
