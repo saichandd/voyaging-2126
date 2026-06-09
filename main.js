@@ -1915,15 +1915,10 @@ function updateLaunch(u) {
   if (voyage.station) voyage.station.visible = false;
   voyage.rocket.visible = voyage.launchTrail.visible = true;
   if (voyage.groundSmoke) voyage.groundSmoke.visible = true;
-  // The flat field is the ground for the low opening; as it fades on the way up it reveals
-  // the real blue Earth beneath, so the green launch cap stays hidden through the climb.
+  // No flat foreground field and no fade trick: the rocket sits on the real Earth globe and
+  // the camera physically pulls back so the curvature is revealed by the zoom-out itself.
   if (voyage.earthGround) voyage.earthGround.visible = false;
-  if (voyage.launchField) {                            // flat ground for the opening, fading as the camera cranes up
-    const ft = clamp01((u - 0.05) / 0.07);
-    const ff = u < 0.14 ? (1 - ft * ft * (3 - 2 * ft)) : 0;
-    voyage.launchField.visible = ff > 0.001;
-    voyage.launchField.material.opacity = ff;
-  }
+  if (voyage.launchField) voyage.launchField.visible = false;
   if (voyage.marsSky) voyage.marsSky.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = true;
   if (voyage.launchSky) voyage.launchSky.visible = true;
@@ -2083,17 +2078,16 @@ function updateLaunch(u) {
 
   // Camera: a broadcast-style sequence of beats, each timed to a flight event.
   const up = LAUNCH_N, side = LAUNCH_T2, fwd = LAUNCH_T1;
-  const CRANE = 0.13;
+  const CRANE = 0.16;
   let camP, lookP, fov = 50;
-  if (u < CRANE) {                             // standing on Earth, then crane up to reveal the curvature
-    const r = clamp01(u / CRANE);
-    const ease = r * r * (3 - 2 * r);          // smoothstep the climb
-    const eye = 0.3 + ease * 4.3;              // human eye height on the ground -> high vantage
-    const back = 2.6 + ease * 4.6;             // stand back from the pad, drifting further as we rise
-    camP = PAD.clone().addScaledVector(up, eye).addScaledVector(fwd, -back).addScaledVector(side, -2.2 - ease * 0.8);
-    const lookUp = (1 - ease) * 0.55 - ease * 1.2;  // rocket against the horizon, easing down as Earth curves in
-    lookP = pos.clone().addScaledVector(up, lookUp);
-    fov = 52 - ease * 9;                        // immersive standing view, tightening as we rise
+  if (u < CRANE) {                             // continuous pull-back from the pad — the curvature is revealed
+    const r = clamp01(u / CRANE);              // by the camera physically retreating, not a fade
+    const ease = r * r * (3 - 2 * r);          // smoothstep the move
+    const eye = 0.3 + ease * 3.4;              // rise from near eye-height to a high vantage above the pad
+    const back = 2.0 + ease * 5.2;             // and steadily pull back so Earth's limb curves into frame
+    camP = PAD.clone().addScaledVector(up, eye).addScaledVector(fwd, -back).addScaledVector(side, -2.0 - ease * 1.6);
+    lookP = pos.clone().addScaledVector(up, 0.3 * (1 - ease));   // hold the rocket centred as we retreat
+    fov = 50 - ease * 8;
   } else if (u < EV.maxQ) {                    // downrange tracking pedestal — rocket climbing against curved Earth
     camP = pos.clone().addScaledVector(side, 3.4).addScaledVector(up, 0.4).addScaledVector(fwd, -1.8);
     lookP = pos.clone().addScaledVector(vel, 1.0); fov = 40;
@@ -2533,9 +2527,7 @@ function updateVoyage(dt) {
 // a buffet through max-Q, and a hard jolt at Mars touchdown — zero everywhere else.
 function stageShake(ph, u) {
   if (ph.mode === 'launch') {
-    const liftoff = clamp01(1 - u / 0.14) * 0.038;                             // big at ignition, fades fast
-    const maxQ = Math.exp(-Math.pow((u - EV.maxQ) / 0.05, 2)) * 0.02;          // buffet bump around max-Q
-    return liftoff + maxQ;
+    return 0;                                                                  // no launch shake — clean, steady ascent
   }
   if (ph.mode === 'edl') {
     return u >= EDL.TOUCH ? clamp01(1 - (u - EDL.TOUCH) / 0.035) * 0.04 : 0;   // jolt on contact, decays
