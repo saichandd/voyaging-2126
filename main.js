@@ -56,7 +56,7 @@ const hdrTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
 });
 const composer = new EffectComposer(renderer, hdrTarget);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.16, 0.32, 1.45);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.11, 0.32, 1.6);
 composer.addPass(bloom);
 
 // Cinematic grade — edge chromatic aberration + soft vignette + fine film grain.
@@ -1156,7 +1156,7 @@ const PAD = E_POS.clone().addScaledVector(LAUNCH_N, E_R);                       
 // effects are all built at this fraction so the vehicle reads as a realistic speck against
 // the fixed-size Earth (radius E_R = 1.7) rather than a planet-sized object. Earth never
 // changes; only the launch rig shrinks. Drop LS to make the rocket smaller vs Earth.
-const LS = 0.15;
+const LS = 0.10;
 const LAUNCH_MAXALT = 3.5 * LS, LAUNCH_RANGE = 3.5 * LS, ROCKET_BASE = 0.5 * LS;  // ascent shaping (scene units)
 // Shared launch + EDL event timelines (progress u in [0,1]) so motion, plume, camera
 // and telemetry stay in sync.
@@ -1999,8 +1999,8 @@ function updateLaunch(u) {
     const bloom = 1 + (1 - atmP) * 1.8;              // plume balloons wide in near-vacuum
     rd.core.scale.set(flick * (0.9 + 0.1 * atmP), throttle * (1.4 + u * 0.7) * flick, flick * (0.9 + 0.1 * atmP));
     rd.outer.scale.set(flick * bloom, throttle * (1.0 + (1 - atmP) * 0.9) * flick, flick * bloom);
-    rd.outer.material.opacity = 0.2 * (0.3 + 0.7 * atmP);
-    rd.core.material.opacity = 0.4;
+    rd.outer.material.opacity = 0.16 * (0.3 + 0.7 * atmP);
+    rd.core.material.opacity = 0.3;
   } else {
     rd.flameGrp.position.y = 0.45;
     const s2 = clamp01((u - EV.ign2) / 0.1) * secoFade;   // second-stage spin-up, cut off at SECO
@@ -2011,7 +2011,7 @@ function updateLaunch(u) {
   }
   rd.glow.visible = flameOn > 0.001;
   rd.glow.scale.setScalar((staged ? 0.32 : 0.62 * (0.6 + 0.4 * atmP)) + Math.sin(elapsed * 26) * 0.12);
-  rd.light.intensity = flameOn * ((staged ? 0.2 : 0.24 * throttle) + Math.sin(elapsed * 40) * 0.08);
+  rd.light.intensity = flameOn * ((staged ? 0.12 : 0.14 * throttle) + Math.sin(elapsed * 40) * 0.05);
 
   // Max-Q condensation cone.
   if (voyage.vaporCone) {
