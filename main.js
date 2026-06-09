@@ -1161,6 +1161,23 @@ function buildEarthGround() {
   m.receiveShadow = true;
   return m;
 }
+// Wide flat terrain plane tangent at the pad. The globe is only 1.7 units across, so a
+// real surface stance would show extreme curvature; this plane gives a believable flat
+// horizon to "stand on" for the opening shot, then fades out as the camera cranes up —
+// revealing the genuinely curved globe beneath, which is the curvature reveal itself.
+function buildLaunchField() {
+  const tex = earthGroundTexture(); tex.repeat.set(26, 26);
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex, color: 0x707d49, roughness: 1.0, metalness: 0.0, envMapIntensity: 0.3,
+    transparent: true, opacity: 1.0, side: THREE.DoubleSide, depthWrite: true,
+  });
+  const m = new THREE.Mesh(new THREE.CircleGeometry(30, 72), mat);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), LAUNCH_N);   // disc normal -> surface up
+  m.position.copy(PAD).addScaledVector(LAUNCH_N, 0.012);                    // sit just above the globe cap
+  m.receiveShadow = true;
+  m.renderOrder = -0.4;
+  return m;
+}
 function buildLaunchPad() {
   const g = new THREE.Group();
   const concrete = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.92, metalness: 0.05, envMapIntensity: 0.3 });
@@ -1790,6 +1807,12 @@ function updateLaunch(u) {
   voyage.rocket.visible = voyage.launchTrail.visible = true;
   if (voyage.groundSmoke) voyage.groundSmoke.visible = true;
   if (voyage.earthGround) voyage.earthGround.visible = true;
+  if (voyage.launchField) {                            // flat ground for the opening, fading as the camera cranes up
+    const ft = clamp01((u - 0.12) / 0.16);
+    const ff = u < 0.3 ? (1 - ft * ft * (3 - 2 * ft)) : 0;
+    voyage.launchField.visible = ff > 0.001;
+    voyage.launchField.material.opacity = ff;
+  }
   if (voyage.marsSky) voyage.marsSky.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = true;
   if (voyage.launchSky) voyage.launchSky.visible = true;
@@ -1940,12 +1963,19 @@ function updateLaunch(u) {
     voyage.launchSky.visible = atmP > 0.02;
   }
 
-  // Camera: broadcast beats — pad cam -> downrange tracking -> onboard -> pull-back reveal.
+  // Camera: ground-level crane -> downrange tracking -> onboard -> pull-back reveal.
   const up = LAUNCH_N, side = LAUNCH_T2, fwd = LAUNCH_T1;
+  const CRANE = 0.30;
   let camP, lookP, fov = 50;
-  if (u < EV.pitch) {                          // anchored pad cam (ground stays in frame)
-    camP = PAD.clone().addScaledVector(up, 0.7).addScaledVector(side, 3.0).addScaledVector(fwd, -0.8);
-    lookP = pos.clone().addScaledVector(up, 0.1); fov = 48;
+  if (u < CRANE) {                             // standing on Earth, then slowly crane up to reveal the curvature
+    const r = clamp01(u / CRANE);
+    const ease = r * r * (3 - 2 * r);          // smoothstep the climb
+    const eye = 0.3 + ease * 4.3;              // human eye height on the ground -> high vantage
+    const back = 2.6 + ease * 4.6;             // stand back from the pad, drifting further as we rise
+    camP = PAD.clone().addScaledVector(up, eye).addScaledVector(fwd, -back).addScaledVector(side, -2.2 - ease * 0.8);
+    const lookUp = (1 - ease) * 0.55 - ease * 1.2;  // rocket against the horizon, easing down as Earth curves in
+    lookP = pos.clone().addScaledVector(up, lookUp);
+    fov = 52 - ease * 9;                        // immersive standing view, tightening as we rise
   } else if (u < EV.sep) {                     // downrange tracking pedestal
     camP = pos.clone().addScaledVector(side, 3.2).addScaledVector(up, 0.3).addScaledVector(fwd, -1.6);
     lookP = pos.clone().addScaledVector(vel, 1.0); fov = 42;
@@ -1967,6 +1997,7 @@ function updateEDL(u) {
   if (voyage.groundSmoke) voyage.groundSmoke.visible = false;
   voyage.lander.visible = false;
   if (voyage.earthGround) voyage.earthGround.visible = false;
+  if (voyage.launchField) voyage.launchField.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = false;
   if (voyage.launchSky) voyage.launchSky.visible = false;
   if (voyage.vaporCone) voyage.vaporCone.visible = false;
@@ -2100,6 +2131,7 @@ function updateHelio(ph, u, dt) {
   if (voyage.frost) voyage.frost.visible = false;
   if (voyage.dust) voyage.dust.visible = false;
   if (voyage.earthGround) voyage.earthGround.visible = false;
+  if (voyage.launchField) voyage.launchField.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = false;
   if (voyage.launchSky) voyage.launchSky.visible = false;
   if (voyage.vaporCone) voyage.vaporCone.visible = false;
@@ -2254,6 +2286,7 @@ function updateVoyage(dt) {
   const ph = PHASES[voyage.stage];
   const u = clamp01((voyage.t - ph.t0) / ph.dur);
   vEls['v-progress'].style.width = (u * 100).toFixed(1) + '%';  // per-stage progress
+  sunGroup.visible = ph.mode !== 'launch';   // the stylized sun disc reads as a portal in the up-looking pad view
   let cam;
   if (ph.mode === 'launch') {
     cam = updateLaunch(u);
@@ -2399,6 +2432,9 @@ function startVoyage() {
     voyage.earthGround = buildEarthGround();                         // launch-site ground patch
     voyage.earthGround.visible = false;
     scene.add(voyage.earthGround);
+    voyage.launchField = buildLaunchField();                         // flat foreground terrain for the opening crane
+    voyage.launchField.visible = false;
+    scene.add(voyage.launchField);
     voyage.launchPad = buildLaunchPad();                             // concrete pad + service gantry
     voyage.launchPad.position.copy(PAD);
     voyage.launchPad.quaternion.setFromUnitVectors(UP, LAUNCH_N);
@@ -2442,6 +2478,7 @@ function endVoyage() {
   voyage.active = false;
   voyage.playing = false;
   controls.enabled = true;
+  sunGroup.visible = true;   // restore the sun for the free-roam atlas view
   if (voyage.ship) {
     voyage.ship.visible = voyage.ellipseFull.visible = voyage.ellipseTrail.visible = false;
     voyage.rocket.visible = voyage.launchTrail.visible = voyage.flash.visible = false;
@@ -2452,6 +2489,7 @@ function endVoyage() {
     if (voyage.base) voyage.base.visible = false;
     if (voyage.ground) voyage.ground.visible = false;
     if (voyage.earthGround) voyage.earthGround.visible = false;
+    if (voyage.launchField) voyage.launchField.visible = false;
     if (voyage.launchPad) voyage.launchPad.visible = false;
     if (voyage.launchSky) voyage.launchSky.visible = false;
     if (voyage.vaporCone) voyage.vaporCone.visible = false;
