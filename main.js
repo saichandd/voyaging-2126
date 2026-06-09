@@ -1773,7 +1773,7 @@ function stageIndexForT(t) {
   return PHASES.length - 1;
 }
 
-function viewTarget(view, st, s) {
+function viewTarget(view, st, s, u = 0) {
   const ship = st.pos;
   const vel = transferState(Math.min(1, s + 0.02)).pos.clone().sub(ship);
   if (vel.lengthSq() < 1e-6) vel.set(0, 0, 1);
@@ -1797,6 +1797,20 @@ function viewTarget(view, st, s) {
     // Look mostly down the travel axis from ahead-and-above so the spinning ring
     // reads face-on, with the docked shuttle in the foreground and deep space behind.
     return { pos: ship.clone().addScaledVector(vel, 7.0).addScaledVector(up, 3.0).addScaledVector(side, 2.2), look: ship.clone().addScaledVector(vel, 1.0) };
+  }
+  if (view === 'dock') {
+    // Close on the docking interface as the shuttle closes in on the Endurance's nose,
+    // with a slow orbital drift so the shot breathes.
+    const d = ship.clone().addScaledVector(vel, 1.3);
+    const off = side.clone().multiplyScalar(3.0).applyAxisAngle(up, elapsed * 0.06);
+    return { pos: d.clone().add(off).addScaledVector(up, 1.2).addScaledVector(vel, -1.2), look: d, fov: 40 };
+  }
+  if (view === 'coast') {
+    // Look back down the track toward the Sun and the shrinking inner system — Earth a
+    // blue point near the glare — with the Endurance silhouetted in the foreground.
+    const out = ship.clone().normalize();                                  // Sun -> ship, pointing outward
+    const off = side.clone().multiplyScalar(2.6).applyAxisAngle(up, elapsed * 0.04);
+    return { pos: ship.clone().addScaledVector(out, 7.0).addScaledVector(up, 2.4).add(off), look: ship.clone(), fov: 42 };
   }
   if (view === 'chase') { return { pos: ship.clone().addScaledVector(vel, -10).addScaledVector(side, 2.2).addScaledVector(up, 4.5), look: ship.clone().addScaledVector(vel, 4) }; }
   if (view === 'depart') {
@@ -2365,11 +2379,14 @@ function updateVoyage(dt) {
   } else {
     const { s, st } = updateHelio(ph, u, dt);
     updateTelemetry(ph, u, s);
-    // Cruise opens near Earth (the staging), then settles into the ring close-up.
+    // Cruise plays as a sequence of beats over the eight-month coast: docking, ring
+    // life, the trans-Mars departure, the deep-space coast, then the Kepler map.
     let view = ph.view;
-    if (ph.key === 'cruise') view = 'endurance';
+    if (ph.key === 'cruise') {
+      view = u < 0.16 ? 'dock' : u < 0.38 ? 'endurance' : u < 0.60 ? 'chase' : u < 0.82 ? 'coast' : 'map';
+    }
     if (ph.key === 'approach') view = 'approach';
-    cam = viewTarget(view, st, s);
+    cam = viewTarget(view, st, s, u);
   }
   // Aim the directional sun + shadow frustum at the current subject each frame so the
   // craft are lit from the same direction as the planet shaders (sun at the origin).
