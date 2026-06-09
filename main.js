@@ -2252,14 +2252,32 @@ function updateTelemetry(ph, u, s) {
     vEls['v-phase'].textContent = ph.short;
     vEls['vc-tag'].textContent = ph.tag;
     vEls['v-notes'].innerHTML = ph.facts.map(f => `<div class="note">› ${f}</div>`).join('');
+    voyage._lastCallout = -1;   // force the launch flight-log to rebuild on (re)entry
     highlightStage();
   }
   if (ph.mode === 'launch') {
     const secs = u * 540;
+    // Velocity dips at MECO then climbs again on the upper stage; altitude keeps rising.
+    const vel = u < EV.meco ? u * 6.6 : 5.3 + (u - EV.meco) * 4.8;
     vEls['v-elapsed'].textContent = `T+ ${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
-    vEls['v-vel'].textContent = `${(u * 7.8).toFixed(1)} KM/S`;
+    vEls['v-vel'].textContent = `${vel.toFixed(1)} KM/S`;
     vEls['v-dist'].textContent = `${Math.round(u * 400)} KM ALT`;
-    vEls['v-engine'].textContent = '● BURN'; vEls['v-engine'].className = 'warn';
+    // Engine status tracks the flight phase.
+    const coast = u >= EV.meco && u < EV.ign2;
+    const status = u < EV.hold ? '◐ IGNITION' : u >= EV.seco ? '○ SECO' : coast ? '○ COAST'
+      : u >= EV.ign2 ? '● SES-1' : u >= EV.maxQ && u < 0.34 ? '▼ THROTTLE' : '● BURN';
+    vEls['v-engine'].textContent = status;
+    vEls['v-engine'].className = (coast || u >= EV.seco) ? '' : 'warn';
+    // Progressive flight log: reveal callouts as each event passes, newest highlighted.
+    let ci = 0; for (let i = 0; i < LAUNCH_CALLOUTS.length; i++) if (u >= LAUNCH_CALLOUTS[i].at) ci = i;
+    if (ci !== voyage._lastCallout) {
+      voyage._lastCallout = ci;
+      const start = Math.max(0, ci - 3);
+      vEls['v-notes'].innerHTML = LAUNCH_CALLOUTS.slice(start, ci + 1).map((c, k) => {
+        const cur = (start + k) === ci;
+        return `<div class="note"${cur ? ' style="opacity:1"' : ' style="opacity:0.5"'}>› <b>${c.tag}.</b> ${c.text}</div>`;
+      }).join('');
+    }
   } else if (ph.mode === 'edl') {
     const a = voyage.edlAlt ?? 8;
     vEls['v-elapsed'].textContent = `ALT ${Math.max(0, Math.round((a - 0.48) / 8.5 * 120))} KM`;
