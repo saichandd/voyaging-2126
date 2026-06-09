@@ -2393,17 +2393,26 @@ function updateTelemetry(ph, u, s) {
     }
   } else {
     const st = voyageStats(s);
-    vEls['v-elapsed'].textContent = `DAY ${Math.round(st.day)} / 259`;
-    vEls['v-vel'].textContent = `${st.v.toFixed(1)} KM/S`;
-    vEls['v-dist'].textContent = `${st.rAU.toFixed(2)} AU`;
-    // Cruise opens with the docking maneuver, then engines-off coast on the ellipse.
-    let eng = '○ OFF', warn = false;
-    if (ph.key === 'cruise' && u < 0.10) { eng = '◐ DOCKING'; warn = true; }
-    else if (ph.burn) { eng = '● BURN'; warn = true; }
-    vEls['v-engine'].textContent = eng;
-    vEls['v-engine'].className = warn ? 'warn' : '';
-    // Progressive flight-log for the coast and approach: reveal callouts as the journey unfolds.
-    const callouts = ph.key === 'cruise' ? CRUISE_CALLOUTS : ph.key === 'approach' ? APPROACH_CALLOUTS : null;
+    if (ph.key === 'surface') {
+      // Landed: surface-appropriate readouts rather than orbital telemetry.
+      vEls['v-elapsed'].textContent = 'SOL 1 · ARRIVED';
+      vEls['v-vel'].textContent = '0.0 KM/S';
+      vEls['v-dist'].textContent = 'MARS · 1.52 AU';
+      vEls['v-engine'].textContent = '○ SHUTDOWN'; vEls['v-engine'].className = '';
+    } else {
+      vEls['v-elapsed'].textContent = `DAY ${Math.round(st.day)} / 259`;
+      vEls['v-vel'].textContent = `${st.v.toFixed(1)} KM/S`;
+      vEls['v-dist'].textContent = `${st.rAU.toFixed(2)} AU`;
+      // Cruise opens with the docking maneuver, then engines-off coast on the ellipse.
+      let eng = '○ OFF', warn = false;
+      if (ph.key === 'cruise' && u < 0.10) { eng = '◐ DOCKING'; warn = true; }
+      else if (ph.burn) { eng = '● BURN'; warn = true; }
+      vEls['v-engine'].textContent = eng;
+      vEls['v-engine'].className = warn ? 'warn' : '';
+    }
+    // Progressive flight-log for the coast, approach and surface tour.
+    const callouts = ph.key === 'cruise' ? CRUISE_CALLOUTS : ph.key === 'approach' ? APPROACH_CALLOUTS
+      : ph.key === 'surface' ? SURFACE_CALLOUTS : null;
     if (callouts) {
       let ci = 0; for (let i = 0; i < callouts.length; i++) if (u >= callouts[i].at) ci = i;
       if (ci !== voyage._lastCallout) {
