@@ -1167,7 +1167,7 @@ const RM = 0.1;
 // so the whole deep-space rig reads ~10x smaller (to-scale vs the planets) without floating
 // craft or mis-framed shots.
 const MS = 0.1;
-const LAUNCH_MAXALT = 3.5 * LS, LAUNCH_RANGE = 3.5 * LS, ROCKET_BASE = 0.5 * LS;  // ascent shaping (scene units)
+const LAUNCH_MAXALT = 3.5 * LS, LAUNCH_RANGE = 3.5 * LS, ROCKET_BASE = 0.5 * LS * RM;  // ascent shaping; rest height scales with the (RM-shrunk) rocket so it sits on the pad
 // Shared launch + EDL event timelines (progress u in [0,1]) so motion, plume, camera
 // and telemetry stay in sync.
 const EV = { hold: 0.025, tower: 0.06, roll: 0.09, pitch: 0.15, maxQ: 0.25, meco: 0.46, sep: 0.49, ign2: 0.54, fairing: 0.63, tilt: 0.80, seco: 0.96 };
@@ -2123,14 +2123,20 @@ function updateLaunch(u) {
   const up = LAUNCH_N, side = LAUNCH_T2, fwd = LAUNCH_T1;
   const CRANE = 0.16;
   let camP, lookP, fov = 50;
-  if (u < CRANE) {                             // continuous pull-back from the pad — the curvature is revealed
-    const r = clamp01(u / CRANE);              // by the camera physically retreating, not a fade
+  if (u < CRANE) {                             // open CLOSE on the rocket standing on the pad, then pull
+    const r = clamp01(u / CRANE);              // back so Earth's limb curves in — a real zoom-out, no fade
     const ease = r * r * (3 - 2 * r);          // smoothstep the move
-    const eye = (0.3 + ease * 3.4) * LS;       // rise from near eye-height to a high vantage above the pad
-    const back = (2.0 + ease * 5.2) * LS;      // and steadily pull back so Earth's limb curves into frame
-    camP = PAD.clone().addScaledVector(up, eye).addScaledVector(fwd, -back).addScaledVector(side, (-2.0 - ease * 1.6) * LS);
-    lookP = pos.clone().addScaledVector(up, 0.3 * (1 - ease) * LS);   // hold the rocket centred as we retreat
-    fov = 50 - ease * 8;
+    const rf = LS * RM;                        // the rocket's own scale — close framing rides this
+    // Near: a ground-level hero shot right beside the vehicle (framed by its own size).
+    const near = pos.clone()
+      .addScaledVector(fwd, -1.7 * rf).addScaledVector(side, -1.0 * rf).addScaledVector(up, -0.4 * rf);
+    const nearLook = pos.clone().addScaledVector(up, 0.4 * rf);
+    // Far: pulled back and up to the wide reveal where the rocket is a speck on a vast Earth.
+    const far = PAD.clone()
+      .addScaledVector(up, 3.7 * LS).addScaledVector(fwd, -7.2 * LS).addScaledVector(side, -3.6 * LS);
+    camP = near.lerp(far, ease);
+    lookP = nearLook.lerp(pos.clone(), ease);
+    fov = 38 + ease * 14;                       // tight hero → wide reveal
   } else if (u < EV.maxQ) {                    // downrange tracking pedestal — rocket climbing against curved Earth
     camP = pos.clone().addScaledVector(side, 3.4 * LS).addScaledVector(up, 0.4 * LS).addScaledVector(fwd, -1.8 * LS);
     lookP = pos.clone().addScaledVector(vel, 1.0 * LS); fov = 40;
@@ -2537,6 +2543,11 @@ function updateVoyage(dt) {
   else if (ph.key === 'surface') { _subj = voyage.base.position; _srad = 5; }
   else if (voyage.station && voyage.station.visible) { _subj = voyage.station.position; _srad = 4 * MS; }
   if (_subj) frameSunShadow(_subj, _srad);
+
+  // Launch frames the tiny rocket from very close, so pull the near plane right in for that
+  // stage only (the rest keep 0.1 to preserve depth precision around the planet shells).
+  const wantNear = ph.mode === 'launch' ? 0.002 : 0.1;
+  if (camera.near !== wantNear) { camera.near = wantNear; camera.updateProjectionMatrix(); }
 
   // Per-stage focal length (stages may return a `fov`): snap on seek, ease while playing.
   const targetFov = cam.fov || 55;
