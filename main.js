@@ -1157,6 +1157,11 @@ const PAD = E_POS.clone().addScaledVector(LAUNCH_N, E_R);                       
 // the fixed-size Earth (radius E_R = 1.7) rather than a planet-sized object. Earth never
 // changes; only the launch rig shrinks. Drop LS to make the rocket smaller vs Earth.
 const LS = 0.10;
+// Rocket-model shrink, applied ON TOP of LS to the vehicle/pad/exhaust *sizes* only —
+// NOT the trajectory, cameras or effect anchor points. So the rocket flies the same
+// believable arc and the cameras stay put, but the vehicle reads ~10x smaller in frame
+// (a tiny craft on a vast Earth) rather than filling it.
+const RM = 0.1;
 const LAUNCH_MAXALT = 3.5 * LS, LAUNCH_RANGE = 3.5 * LS, ROCKET_BASE = 0.5 * LS;  // ascent shaping (scene units)
 // Shared launch + EDL event timelines (progress u in [0,1]) so motion, plume, camera
 // and telemetry stay in sync.
@@ -1277,7 +1282,7 @@ function buildLaunchPad() {
   for (let j = 1; j < 8; j++) { const cr = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.46), steel); cr.position.y = j * 0.44; tower.add(cr); }
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.12), steel); arm.position.set(-0.45, 3.1, 0); tower.add(arm);
   g.add(tower);
-  g.scale.setScalar(0.19 * LS);
+  g.scale.setScalar(0.19 * LS * RM);
   return g;
 }
 function buildLaunchSky() {
@@ -1381,10 +1386,13 @@ function buildRocket() {
 
   // Warm engine fill. Short range + modest intensity so it doesn't blast the pad white
   // at the new tiny launch scale (the sun key light already carries the vehicle).
-  const light = new THREE.PointLight(0xffcaa0, 1.5, 4, 2); light.position.y = -2.2; g.add(light);
+  // decay 0 = flat fill within a short range, so the light can't blast the pad into a
+  // white hotspot via inverse-square at the tiny launch scale (it's only a warm fill;
+  // the sun key light carries the vehicle).
+  const light = new THREE.PointLight(0xffcaa0, 0.18, 0.6, 0); light.position.y = -2.2; g.add(light);
 
   g.userData = { stage1, upper, flameGrp, core, outer, glow, light, fairing };
-  g.scale.setScalar(0.10 * LS);
+  g.scale.setScalar(0.10 * LS * RM);
   return g;
 }
 
@@ -1412,7 +1420,7 @@ function buildSpentStage() {
     gf.position.set(Math.cos(a) * (R + 0.02), 0.7, Math.sin(a) * (R + 0.02));
     gf.lookAt(gf.position.clone().setY(0.7).multiplyScalar(2)); g.add(gf);
   }
-  g.scale.setScalar(0.10 * LS);
+  g.scale.setScalar(0.10 * LS * RM);
   return g;
 }
 
@@ -2011,14 +2019,14 @@ function updateLaunch(u) {
   }
   rd.glow.visible = flameOn > 0.001;
   rd.glow.scale.setScalar((staged ? 0.32 : 0.62 * (0.6 + 0.4 * atmP)) + Math.sin(elapsed * 26) * 0.12);
-  rd.light.intensity = flameOn * ((staged ? 0.12 : 0.14 * throttle) + Math.sin(elapsed * 40) * 0.05);
+  rd.light.intensity = flameOn * ((staged ? 0.08 : 0.1 * throttle) + Math.sin(elapsed * 40) * 0.03);
 
   // Max-Q condensation cone.
   if (voyage.vaporCone) {
     const q = Math.exp(-Math.pow((u - EV.maxQ) / 0.05, 2));
     voyage.vaporCone.visible = q > 0.02 && !staged;
     voyage.vaporCone.material.opacity = 0.8 * q;
-    voyage.vaporCone.scale.setScalar((0.6 + 0.7 * q) * LS);
+    voyage.vaporCone.scale.setScalar((0.6 + 0.7 * q) * LS * RM);
     voyage.vaporCone.position.copy(pos).addScaledVector(vel, 0.1 * LS);
   }
 
@@ -2049,14 +2057,14 @@ function updateLaunch(u) {
         voyage.boosterGlow.visible = heat > 0.02;
         voyage.boosterGlow.position.copy(voyage.spentStage.position).addScaledVector(LAUNCH_N, -0.08 * LS);
         voyage.boosterGlow.material.opacity = heat * 0.85;
-        voyage.boosterGlow.scale.setScalar((0.4 + fall * 0.7) * LS);
+        voyage.boosterGlow.scale.setScalar((0.4 + fall * 0.7) * LS * RM);
       }
       if (voyage.frost) {
         const burst = clamp01((u - EV.sep) / 0.06);
         voyage.frost.visible = burst > 0 && burst < 1;
         voyage.frost.userData.parts.forEach(p => {
-          p.position.copy(sepPos).addScaledVector(p.userData.dir, burst * p.userData.speed * 0.5 * LS);
-          p.material.opacity = (1 - burst) * 0.45; p.scale.setScalar(p.userData.size * (1 + burst) * LS);
+          p.position.copy(sepPos).addScaledVector(p.userData.dir, burst * p.userData.speed * 0.5 * LS * RM);
+          p.material.opacity = (1 - burst) * 0.45; p.scale.setScalar(p.userData.size * (1 + burst) * LS * RM);
         });
       }
     } else {
@@ -2076,7 +2084,7 @@ function updateLaunch(u) {
     const heat = f * f;
     sp.material.color.setRGB(1, 0.55 + heat * 0.4, 0.42 + heat * 0.35);
     sp.material.opacity = (0.08 + (1 - f) * 0.2) * (0.5 + u * 0.5) * (staged ? 0.3 : 1) * clamp01(1.15 - altFrac * 2.6);
-    sp.scale.setScalar((0.3 + (1 - f) * 0.8) * LS);   // smaller puffs so the contrail doesn't read as bubbles
+    sp.scale.setScalar((0.3 + (1 - f) * 0.8) * LS * RM);   // smaller puffs so the contrail doesn't read as bubbles
   });
 
   // Liftoff ground cloud: each puff erupts (staggered), then billows out + up and
@@ -2091,13 +2099,13 @@ function updateLaunch(u) {
     const spread = (0.25 + life * 0.9) * (0.5 + d.rad * 0.5);  // clusters at the pad, billows out modestly
     const lift = 0.12 + life * (0.45 + d.rise * 1.15);         // piles up into a billowing mound at the base
     sp.position.copy(PAD)
-      .addScaledVector(LAUNCH_T1, Math.cos(d.ang) * spread * LS)
-      .addScaledVector(LAUNCH_T2, Math.sin(d.ang) * spread * LS)
-      .addScaledVector(LAUNCH_N, lift * LS);
+      .addScaledVector(LAUNCH_T1, Math.cos(d.ang) * spread * LS * RM)
+      .addScaledVector(LAUNCH_T2, Math.sin(d.ang) * spread * LS * RM)
+      .addScaledVector(LAUNCH_N, lift * LS * RM);
     const warm = clamp01(1 - life * 1.8) * clamp01(1 - lift * 0.7);  // engine glow only at the base, early
     sp.material.color.setRGB(0.62 + warm * 0.36, 0.6 + warm * 0.16, 0.58);  // smoke grey, warming to tan at the root
     sp.material.opacity = (0.32 - life * 0.22) * clamp01(1.2 - altFrac * 1.6);
-    sp.scale.setScalar(d.size * (0.55 + life * 1.4) * LS);  // expands modestly as it ages
+    sp.scale.setScalar(d.size * (0.55 + life * 1.4) * LS * RM);  // expands modestly as it ages
   });
 
   // Sky fades to space with the thinning atmosphere.
