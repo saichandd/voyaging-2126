@@ -1827,8 +1827,8 @@ function updateLaunch(u) {
   // the real blue Earth beneath, so the green launch cap stays hidden through the climb.
   if (voyage.earthGround) voyage.earthGround.visible = false;
   if (voyage.launchField) {                            // flat ground for the opening, fading as the camera cranes up
-    const ft = clamp01((u - 0.12) / 0.16);
-    const ff = u < 0.3 ? (1 - ft * ft * (3 - 2 * ft)) : 0;
+    const ft = clamp01((u - 0.05) / 0.07);
+    const ff = u < 0.14 ? (1 - ft * ft * (3 - 2 * ft)) : 0;
     voyage.launchField.visible = ff > 0.001;
     voyage.launchField.material.opacity = ff;
   }
@@ -1959,7 +1959,7 @@ function updateLaunch(u) {
   // thins, lit warm at the base by the engines and greying as it spreads — the big
   // mushrooming smoke wall that sells a real launch.
   const smoke = voyage.groundSmoke.userData.puffs;
-  const erupt = clamp01(u / 0.16);                          // the cloud front grows over the first part of ascent
+  const erupt = clamp01(u / 0.05);                          // the cloud front billows up fast in the first seconds
   smoke.forEach((sp) => {
     const d = sp.userData;
     const life = clamp01((erupt - d.phase * 0.5) / 0.5);    // staggered 0..1 emergence
@@ -1982,11 +1982,11 @@ function updateLaunch(u) {
     voyage.launchSky.visible = atmP > 0.02;
   }
 
-  // Camera: ground-level crane -> downrange tracking -> onboard -> pull-back reveal.
+  // Camera: a broadcast-style sequence of beats, each timed to a flight event.
   const up = LAUNCH_N, side = LAUNCH_T2, fwd = LAUNCH_T1;
-  const CRANE = 0.30;
+  const CRANE = 0.13;
   let camP, lookP, fov = 50;
-  if (u < CRANE) {                             // standing on Earth, then slowly crane up to reveal the curvature
+  if (u < CRANE) {                             // standing on Earth, then crane up to reveal the curvature
     const r = clamp01(u / CRANE);
     const ease = r * r * (3 - 2 * r);          // smoothstep the climb
     const eye = 0.3 + ease * 4.3;              // human eye height on the ground -> high vantage
@@ -1995,15 +1995,27 @@ function updateLaunch(u) {
     const lookUp = (1 - ease) * 0.55 - ease * 1.2;  // rocket against the horizon, easing down as Earth curves in
     lookP = pos.clone().addScaledVector(up, lookUp);
     fov = 52 - ease * 9;                        // immersive standing view, tightening as we rise
-  } else if (u < EV.sep) {                     // downrange tracking pedestal
-    camP = pos.clone().addScaledVector(side, 3.2).addScaledVector(up, 0.3).addScaledVector(fwd, -1.6);
-    lookP = pos.clone().addScaledVector(vel, 1.0); fov = 42;
-  } else if (u < EV.fairing) {                 // onboard-ish, looking back down at Earth
-    camP = pos.clone().addScaledVector(side, 2.2).addScaledVector(up, 1.1).addScaledVector(fwd, -1.0);
-    lookP = pos.clone().addScaledVector(up, -1.4).addScaledVector(fwd, 0.6); fov = 56;
-  } else {                                     // pull-back reveal: Earth at scale, rocket small
-    camP = pos.clone().addScaledVector(side, 6.0).addScaledVector(up, 2.4).addScaledVector(fwd, -3.4);
-    lookP = pos.clone(); fov = 50;
+  } else if (u < EV.maxQ) {                    // downrange tracking pedestal — rocket climbing against curved Earth
+    camP = pos.clone().addScaledVector(side, 3.4).addScaledVector(up, 0.4).addScaledVector(fwd, -1.8);
+    lookP = pos.clone().addScaledVector(vel, 1.0); fov = 40;
+  } else if (u < EV.meco) {                    // long-lens chase through max-Q and the high climb
+    camP = pos.clone().addScaledVector(side, 2.6).addScaledVector(up, 0.2).addScaledVector(fwd, -0.7);
+    lookP = pos.clone().addScaledVector(up, 0.5); fov = 34;
+  } else if (u < EV.ign2) {                    // MECO + staging: pull back so the booster is seen falling away
+    camP = pos.clone().addScaledVector(side, 3.0).addScaledVector(up, 0.7).addScaledVector(fwd, -2.2);
+    lookP = pos.clone().addScaledVector(up, -0.7); fov = 38;   // frame the gap between the stages
+  } else if (u < EV.fairing) {                 // second-stage ignition: tight on the upper stage lighting
+    camP = pos.clone().addScaledVector(side, 2.0).addScaledVector(up, 0.5).addScaledVector(fwd, -1.1);
+    lookP = pos.clone().addScaledVector(up, -0.2); fov = 40;
+  } else if (u < 0.72) {                       // fairing jettison: side-quarter angle to catch the halves splitting
+    camP = pos.clone().addScaledVector(side, 1.8).addScaledVector(up, 0.7).addScaledVector(fwd, 0.7);
+    lookP = pos.clone().addScaledVector(up, 0.1); fov = 44;
+  } else if (u < EV.seco) {                    // ascent to orbit: the climbing stage high over Earth's curving limb
+    camP = pos.clone().addScaledVector(side, 4.4).addScaledVector(up, 1.4).addScaledVector(fwd, -2.0);
+    lookP = pos.clone().addScaledVector(up, -4.0).addScaledVector(fwd, -2.5); fov = 54;   // tilt down to Earth below
+  } else {                                     // SECO / orbit: close on the now-coasting stage, sunlit, Earth behind
+    camP = pos.clone().addScaledVector(side, 2.2).addScaledVector(up, 0.5).addScaledVector(fwd, -1.2);
+    lookP = pos.clone().addScaledVector(up, -0.6).addScaledVector(fwd, -0.2); fov = 46;
   }
   return { pos: camP, look: lookP, fov, up: LAUNCH_N };
 }
