@@ -1303,6 +1303,48 @@ function buildLaunchTrail() {
   return grp;
 }
 
+// Soft, lumpy smoke puff — several overlapping radial blobs give a cloud-like
+// alpha instead of a single clean disc, so the liftoff cloud reads as billowing.
+function smokeTexture(size = 256) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  for (let i = 0; i < 8; i++) {
+    const a = i * 2.39996;                                    // golden-angle scatter
+    const off = size * 0.17 * ((i % 4) + 1) / 4;
+    const cx = size / 2 + Math.cos(a) * off;
+    const cy = size / 2 + Math.sin(a) * off;
+    const r = size * (0.16 + 0.07 * (i % 3));
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, 'rgba(255,255,255,0.42)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, size, size);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Liftoff ground cloud: soft smoke puffs that erupt at the pad on ignition and
+// billow outward + upward, lingering as the rocket climbs away. Normal (non-additive)
+// blending so it reads as dense opaque smoke, warm at the base, grey as it spreads.
+function buildGroundSmoke(count = 44) {
+  const grp = new THREE.Group();
+  const tex = smokeTexture();
+  grp.userData.puffs = [];
+  for (let i = 0; i < count; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
+    sp.userData = {
+      ang: (i * 2.39996) % TAU,                  // direction it billows across the ground
+      rad: 0.3 + ((i * 7) % 11) / 11,            // how far out it reaches (0.3..1.3)
+      rise: ((i * 5) % 9) / 9,                    // how much it lifts as it ages
+      size: 0.35 + ((i * 3) % 7) / 7 * 0.5,       // base sprite scale (small — grows with life)
+      phase: ((i * 13) % 19) / 19,                // staggered emergence so it keeps boiling
+    };
+    grp.add(sp); grp.userData.puffs.push(sp);
+  }
+  return grp;
+}
+
 // Soft round puff, reused for frost flakes (staging) and dust clouds (landing).
 const PUFF_TEX = radialTexture(['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.4)', 'rgba(255,255,255,0)']);
 
@@ -1745,6 +1787,7 @@ function updateLaunch(u) {
   if (voyage.base) voyage.base.visible = false;
   if (voyage.station) voyage.station.visible = false;
   voyage.rocket.visible = voyage.launchTrail.visible = true;
+  if (voyage.groundSmoke) voyage.groundSmoke.visible = true;
   if (voyage.earthGround) voyage.earthGround.visible = true;
   if (voyage.marsSky) voyage.marsSky.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = true;
@@ -1869,6 +1912,27 @@ function updateLaunch(u) {
     sp.scale.setScalar(0.5 + (1 - f) * 1.2);
   });
 
+  // Liftoff ground cloud: each puff erupts (staggered), then billows out + up and
+  // thins, lit warm at the base by the engines and greying as it spreads — the big
+  // mushrooming smoke wall that sells a real launch.
+  const smoke = voyage.groundSmoke.userData.puffs;
+  const erupt = clamp01(u / 0.16);                          // the cloud front grows over the first part of ascent
+  smoke.forEach((sp) => {
+    const d = sp.userData;
+    const life = clamp01((erupt - d.phase * 0.5) / 0.5);    // staggered 0..1 emergence
+    if (life <= 0.001) { sp.material.opacity = 0; return; }
+    const spread = (0.25 + life * 0.9) * (0.5 + d.rad * 0.5);  // clusters at the pad, billows out modestly
+    const lift = 0.12 + life * (0.45 + d.rise * 1.15);         // piles up into a billowing mound at the base
+    sp.position.copy(PAD)
+      .addScaledVector(LAUNCH_T1, Math.cos(d.ang) * spread)
+      .addScaledVector(LAUNCH_T2, Math.sin(d.ang) * spread)
+      .addScaledVector(LAUNCH_N, lift);
+    const warm = clamp01(1 - life * 1.8) * clamp01(1 - lift * 0.7);  // engine glow only at the base, early
+    sp.material.color.setRGB(0.62 + warm * 0.36, 0.6 + warm * 0.16, 0.58);  // smoke grey, warming to tan at the root
+    sp.material.opacity = (0.5 - life * 0.3) * clamp01(1.3 - alt * 0.2);
+    sp.scale.setScalar(d.size * (0.55 + life * 1.4));        // expands modestly as it ages
+  });
+
   // Sky fades to space with the thinning atmosphere.
   if (voyage.launchSky) {
     voyage.launchSky.material.uniforms.uFade.value = clamp01(Math.pow(atmP, 0.6));
@@ -1899,6 +1963,7 @@ function updateLaunch(u) {
 // touchdown — no parachutes, no fiery "7 minutes of terror".
 function updateEDL(u) {
   voyage.rocket.visible = voyage.launchTrail.visible = false;
+  if (voyage.groundSmoke) voyage.groundSmoke.visible = false;
   voyage.lander.visible = false;
   if (voyage.earthGround) voyage.earthGround.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = false;
@@ -1984,20 +2049,22 @@ function updateEDL(u) {
 
   // Dust + a few lofted debris kicked up by the burn near touchdown; settles after.
   if (voyage.dust) {
-    const active = (landing && alt < 1.8) || (touched && u < 0.99);
+    const active = (landing && alt < 2.4) || (touched && u < 0.998);
     voyage.dust.visible = active;
     if (active) {
-      const settle = touched ? clamp01((0.99 - u) / 0.025) : 1;
-      const d = clamp01((1.8 - alt) / 1.7) * settle;
+      // Builds as the retro plume nears the ground, peaks at touchdown, then hangs
+      // and slowly settles — a reddish Mars dust wall blown out flat across the pad.
+      const settle = touched ? clamp01((0.998 - u) / 0.05) : 1;
+      const amp = touched ? settle : clamp01((2.4 - alt) / 2.2);
       voyage.dust.position.copy(M).addScaledVector(dir, mR + 0.04);
       voyage.dust.quaternion.setFromUnitVectors(UP, dir);
       voyage.dust.userData.parts.forEach((p, i) => {
         const debris = (i % 7 === 0);
-        const reach = d * p.userData.speed * (debris ? 1.7 : 1.1);
-        const lift = debris ? 0.45 : 0.12;
+        const reach = amp * p.userData.speed * (debris ? 1.8 : 1.5);
+        const lift = debris ? 0.5 : 0.16;                       // billows wide and flat, hugging the ground
         p.position.set(p.userData.dir.x * reach, Math.abs(p.userData.dir.y) * reach * lift, p.userData.dir.z * reach);
-        p.material.opacity = d * (debris ? 0.5 : 0.4) * (1 - d * 0.35);
-        p.scale.setScalar(p.userData.size * (debris ? 0.6 : 1) * (1 + reach * 0.8));
+        p.material.opacity = amp * (debris ? 0.65 : 0.6) * (1 - amp * 0.2);
+        p.scale.setScalar(p.userData.size * (debris ? 0.7 : 1.3) * (1 + reach * 0.9));
       });
     }
   }
@@ -2026,6 +2093,7 @@ function updateHelio(ph, u, dt) {
   voyage.rocket.visible = false;
   voyage.lander.visible = false;
   voyage.launchTrail.visible = false;
+  if (voyage.groundSmoke) voyage.groundSmoke.visible = false;
   voyage.flash.visible = false;
   if (voyage.spentStage) voyage.spentStage.visible = false;
   if (voyage.frost) voyage.frost.visible = false;
@@ -2266,6 +2334,9 @@ function startVoyage() {
     scene.add(voyage.lander);
     voyage.launchTrail = buildLaunchTrail();
     scene.add(voyage.launchTrail);
+    voyage.groundSmoke = buildGroundSmoke();
+    voyage.groundSmoke.visible = false;
+    scene.add(voyage.groundSmoke);
     voyage.flash = new THREE.Sprite(new THREE.SpriteMaterial({
       map: radialTexture(['rgba(255,255,255,0.95)', 'rgba(255,205,130,0.5)', 'rgba(255,120,40,0)']),
       transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0,
@@ -2284,7 +2355,7 @@ function startVoyage() {
     voyage.boosterGlow.visible = false; scene.add(voyage.boosterGlow);   // spent-stage reentry glow
     voyage.frost = buildParticles(26, 0xdff0ff, true, 0.05, 0.17);   // ice/gas at staging
     scene.add(voyage.frost);
-    voyage.dust = buildParticles(28, 0xc98f63, false, 0.18, 0.5);    // dust at touchdown
+    voyage.dust = buildParticles(40, 0xc98f63, false, 0.18, 0.5);    // dust at touchdown
     scene.add(voyage.dust);
     voyage.base = buildMarsBase();                                   // Mars surface colony
     voyage.base.visible = false;
@@ -2344,6 +2415,7 @@ function endVoyage() {
   if (voyage.ship) {
     voyage.ship.visible = voyage.ellipseFull.visible = voyage.ellipseTrail.visible = false;
     voyage.rocket.visible = voyage.launchTrail.visible = voyage.flash.visible = false;
+    if (voyage.groundSmoke) voyage.groundSmoke.visible = false;
     voyage.lander.visible = false;
     if (voyage.frost) voyage.frost.visible = false;
     if (voyage.dust) voyage.dust.visible = false;
