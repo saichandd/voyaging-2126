@@ -2365,9 +2365,20 @@ function updateTelemetry(ph, u, s) {
     vEls['v-elapsed'].textContent = `ALT ${Math.max(0, Math.round((a - 0.48) / 8.5 * 120))} KM`;
     vEls['v-vel'].textContent = `${Math.max(0, (a - 0.48) / 8.5 * 4.6 + (u < EDL.AERO ? 1.0 : 0)).toFixed(1)} KM/S`;
     vEls['v-dist'].textContent = voyage.edlPhase || 'DESCENT';
-    const retro = u >= EDL.BURN && u <= EDL.TOUCH, plasma = u < EDL.AERO;
-    vEls['v-engine'].textContent = u > EDL.TOUCH ? '○ DOWN' : (retro ? '● RETRO' : (plasma ? '▲ PLASMA' : '○ AEROBRAKE'));
+    const retro = u >= EDL.BURN && u <= EDL.TOUCH, plasma = u >= EDL.ENTRY && u < EDL.AERO;
+    vEls['v-engine'].textContent = u > EDL.TOUCH ? '○ DOWN' : retro ? '● RETRO' : plasma ? '▲ PLASMA'
+      : u < EDL.ENTRY ? '○ FREE-FALL' : '○ AEROBRAKE';
     vEls['v-engine'].className = (retro || plasma) ? 'warn' : '';
+    // Progressive descent flight-log: reveal callouts as each EDL phase passes.
+    let ci = 0; for (let i = 0; i < EDL_CALLOUTS.length; i++) if (u >= EDL_CALLOUTS[i].at) ci = i;
+    if (ci !== voyage._lastCallout) {
+      voyage._lastCallout = ci;
+      const start = Math.max(0, ci - 3);
+      vEls['v-notes'].innerHTML = EDL_CALLOUTS.slice(start, ci + 1).map((c, k) => {
+        const cur = (start + k) === ci;
+        return `<div class="note"${cur ? ' style="opacity:1"' : ' style="opacity:0.5"'}>› <b>${c.tag}.</b> ${c.text}</div>`;
+      }).join('');
+    }
   } else {
     const st = voyageStats(s);
     vEls['v-elapsed'].textContent = `DAY ${Math.round(st.day)} / 259`;
