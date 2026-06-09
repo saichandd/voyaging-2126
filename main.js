@@ -1133,7 +1133,23 @@ const PAD = E_POS.clone().addScaledVector(LAUNCH_N, E_R);                       
 const LAUNCH_MAXALT = 7.0, LAUNCH_RANGE = 6.0, ROCKET_BASE = 0.5;              // ascent shaping (scene units)
 // Shared launch + EDL event timelines (progress u in [0,1]) so motion, plume, camera
 // and telemetry stay in sync.
-const EV = { hold: 0.04, tower: 0.10, pitch: 0.20, maxQ: 0.32, meco: 0.55, sep: 0.58, ign2: 0.63, fairing: 0.74, tilt: 0.82 };
+const EV = { hold: 0.025, tower: 0.06, roll: 0.09, pitch: 0.15, maxQ: 0.25, meco: 0.46, sep: 0.49, ign2: 0.54, fairing: 0.63, tilt: 0.80, seco: 0.96 };
+// Launch broadcast callouts, surfaced one at a time as the flight passes each event —
+// the running flight log a narrator reads over (status drives the ENGINE field separately).
+const LAUNCH_CALLOUTS = [
+  { at: 0.00, tag: 'IGNITION', text: 'Ignition sequence start — engines building to full thrust against the hold-downs.' },
+  { at: 0.025, tag: 'LIFTOFF', text: 'Liftoff! Clearing the pad under 3–4 g — three to four times your own weight.' },
+  { at: 0.06, tag: 'TOWER CLEAR', text: 'Tower cleared. Rolling the vehicle onto its flight azimuth toward orbit.' },
+  { at: 0.15, tag: 'PITCH OVER', text: 'Pitch program — the rocket leans downrange and the gravity turn begins.' },
+  { at: 0.25, tag: 'MAX-Q', text: 'Max-Q — peak aerodynamic pressure. Engines throttle down through the stress.' },
+  { at: 0.34, tag: 'THROTTLE UP', text: 'Through the thick air — throttling back up, accelerating hard now.' },
+  { at: 0.46, tag: 'MECO', text: 'MECO — main engine cutoff. The first stage has done its job.' },
+  { at: 0.49, tag: 'STAGE SEP', text: 'Stage separation — the booster falls away to fly itself home and be reused.' },
+  { at: 0.54, tag: 'SES-1', text: 'Second-stage ignition — a single vacuum engine lights to push on to orbit.' },
+  { at: 0.63, tag: 'FAIRING SEP', text: 'Fairing jettison — the nose cone splits away; the air is too thin to matter.' },
+  { at: 0.80, tag: 'ASCENT', text: 'Above 200 km, building toward 28,000 km/h — nearly orbital velocity.' },
+  { at: 0.96, tag: 'SECO · ORBIT', text: 'SECO — engines off. The push is over. You are weightless, in orbit.' },
+];
 const EDL = { ENTRY: 0.16, AERO: 0.42, PITCH: 0.55, BURN: 0.62, TOUCH: 0.965 };
 
 function earthGroundTexture(s = 1024) {
@@ -1679,12 +1695,13 @@ function buildMarsGround() {
 // Text/facts are short, informal prompts — meant to be narrated over live.
 const PHASES = [
   {
-    key: 'launch', label: '01 · LAUNCH', short: 'LAUNCH', dur: 16, mode: 'launch',
+    key: 'launch', label: '01 · LAUNCH', short: 'LAUNCH', dur: 84, mode: 'launch',
     tag: 'STAGE 01 · LAUNCH',
+    // Progressive callouts, revealed in sync with the flight events (see LAUNCH_CALLOUTS).
     facts: [
-      'Liftoff. 3–4 g, i.e. 3 to 4× your own weight.',
-      '~9 minutes of burn to reach 28,000 km/h. escape velocity.',
-      'engines cut off, suddenly weightless.',
+      'Ignition — the engines light and build to full thrust before release.',
+      'Liftoff. 3–4 g, three to four times your own weight.',
+      '~9 minutes of burning to reach 28,000 km/h, then weightless in orbit.',
     ]
   },
   {
