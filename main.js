@@ -2364,13 +2364,14 @@ function updateTelemetry(ph, u, s) {
     else if (ph.burn) { eng = '● BURN'; warn = true; }
     vEls['v-engine'].textContent = eng;
     vEls['v-engine'].className = warn ? 'warn' : '';
-    // Progressive cruise flight-log: reveal callouts as the coast unfolds, newest highlighted.
-    if (ph.key === 'cruise') {
-      let ci = 0; for (let i = 0; i < CRUISE_CALLOUTS.length; i++) if (u >= CRUISE_CALLOUTS[i].at) ci = i;
+    // Progressive flight-log for the coast and approach: reveal callouts as the journey unfolds.
+    const callouts = ph.key === 'cruise' ? CRUISE_CALLOUTS : ph.key === 'approach' ? APPROACH_CALLOUTS : null;
+    if (callouts) {
+      let ci = 0; for (let i = 0; i < callouts.length; i++) if (u >= callouts[i].at) ci = i;
       if (ci !== voyage._lastCallout) {
         voyage._lastCallout = ci;
         const start = Math.max(0, ci - 3);
-        vEls['v-notes'].innerHTML = CRUISE_CALLOUTS.slice(start, ci + 1).map((c, k) => {
+        vEls['v-notes'].innerHTML = callouts.slice(start, ci + 1).map((c, k) => {
           const cur = (start + k) === ci;
           return `<div class="note"${cur ? ' style="opacity:1"' : ' style="opacity:0.5"'}>› <b>${c.tag}.</b> ${c.text}</div>`;
         }).join('');
