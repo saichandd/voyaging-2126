@@ -2159,7 +2159,7 @@ function updateEDL(u) {
   // Entry plasma glow + ionization trail (brief, high up).
   voyage.flash.visible = inEntry;
   if (inEntry) {
-    const heat = clamp01(1 - Math.abs(u - EDL.ENTRY * 0.6) / (EDL.ENTRY * 0.9));
+    const heat = clamp01(1 - Math.abs(u - 0.24) / 0.14);   // plasma peaks after undock, fades before aerobrake
     voyage.flash.position.copy(pos).addScaledVector(velDir, 0.35);   // glow just ahead of the heat shield
     voyage.flash.material.opacity = heat * 0.55;
     voyage.flash.scale.setScalar(0.5 + heat * 0.9);
@@ -2204,9 +2204,12 @@ function updateEDL(u) {
   voyage.edlPhase = u < EDL.ENTRY ? 'ENTRY INTERFACE' : u < EDL.AERO ? 'PLASMA / AEROBRAKE'
     : u < EDL.BURN ? 'PITCH-UP' : u < EDL.TOUCH ? 'RETRO BURN' : 'TOUCHDOWN';
 
-  // Camera: high entry shot → tracking the descent → low ground-level burn + landing.
+  // Camera: undock → high entry shot → tracking the descent → low ground-level burn + landing.
   let camP, lookP, fov;
-  if (u < EDL.AERO) {
+  if (u < 0.12) {                              // undock: the shuttle drops away from the Endurance, Mars below
+    camP = pos.clone().addScaledVector(cross, 4.6).addScaledVector(dir, 0.6).addScaledVector(tang, 0.6);
+    lookP = pos.clone().addScaledVector(tang, -0.6).addScaledVector(dir, -1.1); fov = 52;   // craft centred, Mars below
+  } else if (u < EDL.AERO) {
     camP = pos.clone().addScaledVector(cross, 3.0).addScaledVector(dir, 1.4).addScaledVector(tang, 2.0);
     lookP = pos.clone().addScaledVector(velDir, 1.4); fov = 50;
   } else if (u < EDL.BURN + 0.05) {
