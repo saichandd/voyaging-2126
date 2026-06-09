@@ -747,59 +747,79 @@ function buildPlanet(p) {
 PLANETS.forEach(buildPlanet);
 
 // ------------------------------------------------------------
-// Earth satellite constellation — many small craft on inclined orbital shells
-// (plus scattered extras), with faint orbit rings. Parented to Earth so it
-// tracks Earth's position and inherits its visibility; animated in updateEarthSats.
+// Orbital space data centers — LEO/MEO clusters of server-farm infrastructure,
+// each with distinctive heat-radiator panels and solar arrays. Much smaller than
+// the old satellites so they read as specks against Earth at true relative scale.
+// Parented to Earth so they track Earth's position; animated in updateEarthSats.
 // ------------------------------------------------------------
 let earthSats = null;
-function buildEarthSatellites() {
+function buildSpaceDataCenters() {
   const grp = new THREE.Group();
   grp.userData.sats = [];
   const R = planetMeshes.earth.config.size;
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xcfd6de, metalness: 0.7, roughness: 0.4, emissive: 0x2a3a4c, emissiveIntensity: 0.5 });
-  const panelMat = new THREE.MeshStandardMaterial({ color: 0x1b2c66, metalness: 0.5, roughness: 0.4, emissive: 0x0a1640, emissiveIntensity: 0.7 });
-  const bodyGeo = new THREE.BoxGeometry(0.06, 0.05, 0.09);
-  const panelGeo = new THREE.BoxGeometry(0.16, 0.004, 0.06);
 
-  // Orthonormal basis (u, v) for an orbit plane at inclination `inc`, node `node`.
+  // Shared materials
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xc8cfd8, metalness: 0.75, roughness: 0.30, emissive: 0x1a2a3c, emissiveIntensity: 0.35 });
+  // Heat radiators glow warm orange — the signature of active server cooling in orbit
+  const radiatorMat = new THREE.MeshStandardMaterial({ color: 0xff5820, metalness: 0.2, roughness: 0.55, emissive: 0xff2a00, emissiveIntensity: 1.4, transparent: true, opacity: 0.92 });
+  const solarMat = new THREE.MeshStandardMaterial({ color: 0x1b2c66, metalness: 0.5, roughness: 0.4, emissive: 0x0a1640, emissiveIntensity: 0.6 });
+
+  // Geometry — everything much smaller so they're specks against a 1.7-unit Earth
+  const bodyGeo = new THREE.BoxGeometry(0.014, 0.008, 0.020);
+  const radiatorGeo = new THREE.BoxGeometry(0.018, 0.001, 0.012);   // flat radiator fins, perpendicular to body
+  const solarGeo = new THREE.BoxGeometry(0.034, 0.0008, 0.010);     // long solar wings
+
   function planeBasis(inc, node) {
     const u = new THREE.Vector3(Math.cos(node), 0, Math.sin(node));
     const w0 = new THREE.Vector3(-Math.sin(node), 0, Math.cos(node));
     const v = w0.multiplyScalar(Math.cos(inc)).addScaledVector(new THREE.Vector3(0, 1, 0), -Math.sin(inc)).normalize();
     return { u, v };
   }
-  function addSat(r, u, v, theta, omega) {
-    const sat = new THREE.Group();
-    sat.add(new THREE.Mesh(bodyGeo, bodyMat));
-    const pL = new THREE.Mesh(panelGeo, panelMat); pL.position.x = 0.12; sat.add(pL);
-    const pR = new THREE.Mesh(panelGeo, panelMat); pR.position.x = -0.12; sat.add(pR);
-    grp.add(sat);
-    grp.userData.sats.push({ mesh: sat, r, u, v, theta, omega });
+
+  function addDataCenter(r, u, v, theta, omega) {
+    const dc = new THREE.Group();
+    dc.add(new THREE.Mesh(bodyGeo, bodyMat));
+    // Radiator fins above and below the main body
+    const radA = new THREE.Mesh(radiatorGeo, radiatorMat); radA.position.y = 0.008; dc.add(radA);
+    const radB = new THREE.Mesh(radiatorGeo, radiatorMat); radB.position.y = -0.008; dc.add(radB);
+    // Solar arrays extending to the sides
+    const solL = new THREE.Mesh(solarGeo, solarMat); solL.position.x = 0.024; dc.add(solL);
+    const solR = new THREE.Mesh(solarGeo, solarMat); solR.position.x = -0.024; dc.add(solR);
+    grp.add(dc);
+    grp.userData.sats.push({ mesh: dc, r, u, v, theta, omega });
   }
 
-  // Constellation shells: each is a visible orbital band carrying many satellites.
+  // LEO to low-MEO shells (R + 0.13 → R + 0.42 ≈ 490–1575 km altitude at Earth scale).
+  // Proportional to real Starlink/OneWeb/GPS bands, just compressed to scene units.
   const shells = [
-    { r: R + 0.5, inc: 0.9 }, { r: R + 0.75, inc: 1.5 }, { r: R + 1.0, inc: 0.35 },
-    { r: R + 1.25, inc: 2.2 }, { r: R + 1.55, inc: 1.1 }, { r: R + 1.9, inc: 2.7 },
+    { r: R + 0.13, inc: 0.90, count: 5 },   // ~490 km — dense LEO band
+    { r: R + 0.18, inc: 1.55, count: 5 },   // ~675 km
+    { r: R + 0.25, inc: 0.38, count: 4 },   // ~940 km
+    { r: R + 0.32, inc: 2.10, count: 4 },   // ~1200 km
+    { r: R + 0.42, inc: 1.12, count: 3 },   // ~1575 km
   ];
   shells.forEach((sh, si) => {
     const { u, v } = planeBasis(sh.inc, si * 1.21);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(sh.r, 0.006, 6, 96),
-      new THREE.MeshBasicMaterial({ color: 0x6ff1ff, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(sh.r, 0.0025, 6, 96),
+      new THREE.MeshBasicMaterial({ color: 0x4ad4ff, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
     ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3().crossVectors(u, v).normalize());
     grp.add(ring);
-    const omega = 0.28 * Math.pow(R / sh.r, 1.5) + 0.12;
-    for (let k = 0; k < 11; k++) addSat(sh.r, u, v, (k / 11) * TAU + Math.random() * 0.3, omega);
+    const omega = 0.30 * Math.pow(R / sh.r, 1.5) + 0.10;
+    for (let k = 0; k < sh.count; k++) {
+      addDataCenter(sh.r, u, v, (k / sh.count) * TAU + Math.random() * 0.4, omega);
+    }
   });
-  // Scattered extras on random orbits.
-  for (let i = 0; i < 16; i++) {
-    const r = R + 0.45 + Math.random() * 1.7;
+  // A handful of solo data centers on random inclined orbits
+  for (let i = 0; i < 6; i++) {
+    const r = R + 0.14 + Math.random() * 0.30;
     const { u, v } = planeBasis(Math.random() * Math.PI, Math.random() * TAU);
-    addSat(r, u, v, Math.random() * TAU, 0.28 * Math.pow(R / r, 1.5) + 0.12);
+    addDataCenter(r, u, v, Math.random() * TAU, 0.30 * Math.pow(R / r, 1.5) + 0.10);
   }
   return grp;
 }
-earthSats = buildEarthSatellites();
+earthSats = buildSpaceDataCenters();
 planetMeshes.earth.tiltGroup.add(earthSats);
 
 function updateEarthSats(dt) {
