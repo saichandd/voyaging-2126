@@ -1806,7 +1806,9 @@ function updateLaunch(u) {
   if (voyage.station) voyage.station.visible = false;
   voyage.rocket.visible = voyage.launchTrail.visible = true;
   if (voyage.groundSmoke) voyage.groundSmoke.visible = true;
-  if (voyage.earthGround) voyage.earthGround.visible = true;
+  // The flat field is the ground for the low opening; as it fades on the way up it reveals
+  // the real blue Earth beneath, so the green launch cap stays hidden through the climb.
+  if (voyage.earthGround) voyage.earthGround.visible = false;
   if (voyage.launchField) {                            // flat ground for the opening, fading as the camera cranes up
     const ft = clamp01((u - 0.12) / 0.16);
     const ff = u < 0.3 ? (1 - ft * ft * (3 - 2 * ft)) : 0;
