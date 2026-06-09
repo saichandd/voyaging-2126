@@ -1872,7 +1872,11 @@ function updateLaunch(u) {
   const H = LAUNCH_MAXALT * 0.42, atmP = Math.exp(-alt / H);
   const throttle = 1 - 0.34 * Math.exp(-Math.pow((u - EV.maxQ) / 0.06, 2));   // max-Q throttle-down
   const flick = 0.85 + Math.sin(elapsed * 42) * 0.15;
-  rd.flameGrp.visible = !staged || u >= EV.ign2;     // dark coast between MECO and 2nd-stage ignition
+  // Engine on only while actually burning: first stage to MECO, then upper stage from
+  // SES-1 to a quick cutoff at SECO (orbit). Dark coast at MECO and after orbit insertion.
+  const secoFade = 1 - clamp01((u - EV.seco) / 0.015);
+  const flameOn = (!staged && u < EV.meco) ? 1 : (staged && u >= EV.ign2 ? secoFade : 0);
+  rd.flameGrp.visible = flameOn > 0.001;
   if (!staged) {
     rd.flameGrp.position.y = -3.0;
     const bloom = 1 + (1 - atmP) * 1.8;              // plume balloons wide in near-vacuum
@@ -1882,14 +1886,15 @@ function updateLaunch(u) {
     rd.core.material.opacity = 0.95;
   } else {
     rd.flameGrp.position.y = 0.45;
-    const s2 = clamp01((u - EV.ign2) / 0.1);          // second-stage spin-up
+    const s2 = clamp01((u - EV.ign2) / 0.1) * secoFade;   // second-stage spin-up, cut off at SECO
     rd.core.scale.set(flick * 0.5 * s2, (0.7 + (u - EV.ign2)) * flick * s2, flick * 0.5 * s2);
     rd.outer.scale.set(flick * 2.4 * s2, 0.9 * flick * s2, flick * 2.4 * s2);   // vacuum bell bloom
     rd.outer.material.opacity = 0.28 * s2;
     rd.core.material.opacity = 0.85 * s2;
   }
+  rd.glow.visible = flameOn > 0.001;
   rd.glow.scale.setScalar((staged ? 0.8 : 1.6 * (0.6 + 0.4 * atmP)) + Math.sin(elapsed * 26) * 0.25);
-  rd.light.intensity = (staged ? 1.0 : 1.5 * throttle) + Math.sin(elapsed * 40) * 0.4;
+  rd.light.intensity = flameOn * ((staged ? 1.0 : 1.5 * throttle) + Math.sin(elapsed * 40) * 0.4);
 
   // Max-Q condensation cone.
   if (voyage.vaporCone) {
@@ -1911,10 +1916,10 @@ function updateLaunch(u) {
 
   // Spent first stage tumbles back toward Earth + an entry/retro glow; ullage frost burst.
   if (voyage.spentStage) {
-    voyage.spentStage.visible = staged;
+    const fall = (u - EV.sep) / (1 - EV.sep);
+    voyage.spentStage.visible = staged && fall < 0.9;       // gone home before the orbit beauty shots
     if (staged) {
       const sepPos = sitePos(EV.sep);
-      const fall = (u - EV.sep) / (1 - EV.sep);
       voyage.spentStage.position.copy(sepPos)
         .addScaledVector(vel, fall * 0.8)
         .addScaledVector(LAUNCH_N, -(fall * fall) * 6.0)
@@ -1922,9 +1927,11 @@ function updateLaunch(u) {
       voyage.spentStage.quaternion.setFromUnitVectors(UP, LAUNCH_N);
       voyage.spentStage.rotateX(fall * 4.0); voyage.spentStage.rotateZ(fall * 2.2);
       if (voyage.boosterGlow) {
-        voyage.boosterGlow.visible = fall > 0.18;
+        // Entry-heating glow: flares as it bites into the air, then fades as it descends home.
+        const heat = clamp01((fall - 0.18) / 0.16) * clamp01((0.82 - fall) / 0.25);
+        voyage.boosterGlow.visible = heat > 0.02;
         voyage.boosterGlow.position.copy(voyage.spentStage.position).addScaledVector(LAUNCH_N, -0.08);
-        voyage.boosterGlow.material.opacity = clamp01(fall - 0.18) * 0.8;
+        voyage.boosterGlow.material.opacity = heat * 0.85;
         voyage.boosterGlow.scale.setScalar(0.4 + fall * 0.7);
       }
       if (voyage.frost) {
@@ -1951,7 +1958,7 @@ function updateLaunch(u) {
     sp.position.copy(PAD).addScaledVector(LAUNCH_N, colTop * f).addScaledVector(LAUNCH_T1, rng * colFrac * f);
     const heat = f * f;
     sp.material.color.setRGB(1, 0.55 + heat * 0.4, 0.42 + heat * 0.35);
-    sp.material.opacity = (0.2 + (1 - f) * 0.5) * (0.5 + u * 0.5) * (staged ? 0.3 : 1) * clamp01(1.5 - alt * 0.18);
+    sp.material.opacity = (0.2 + (1 - f) * 0.5) * (0.5 + u * 0.5) * (staged ? 0.3 : 1) * clamp01(1.35 - alt * 0.55);
     sp.scale.setScalar(0.5 + (1 - f) * 1.2);
   });
 
