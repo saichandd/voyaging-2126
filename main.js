@@ -56,7 +56,7 @@ const hdrTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
 });
 const composer = new EffectComposer(renderer, hdrTarget);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.3, 0.5, 1.05);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.16, 0.5, 1.25);
 composer.addPass(bloom);
 
 // Cinematic grade — edge chromatic aberration + soft vignette + fine film grain.
@@ -136,7 +136,7 @@ function windowGridTexture(w = 1024, h = 256, cols = 44, rows = 4) {
 }
 const PANEL_N = panelNormalTexture();
 const WIN_TEX = windowGridTexture();
-const winMat = new THREE.MeshStandardMaterial({ color: 0x05070b, roughness: 0.5, metalness: 0.4, emissive: 0xffffff, emissiveMap: WIN_TEX, emissiveIntensity: 3.0 });
+const winMat = new THREE.MeshStandardMaterial({ color: 0x05070b, roughness: 0.5, metalness: 0.4, emissive: 0xffffff, emissiveMap: WIN_TEX, emissiveIntensity: 1.5 });
 
 function radialTexture(stops, size = 256) {
   const c = document.createElement('canvas'); c.width = c.height = size;
@@ -292,7 +292,7 @@ const sunRadius = 9;
 // Real solar photosphere texture, pushed above 1.0 (toneMapped:false) so it stays blinding
 // and feeds the bloom as a true HDR emitter.
 const sunTex = loadTex('2k_sun.jpg', { srgb: true });
-const sunMat = new THREE.MeshBasicMaterial({ map: sunTex, color: new THREE.Color(2.4, 2.1, 1.7), toneMapped: false });
+const sunMat = new THREE.MeshBasicMaterial({ map: sunTex, color: new THREE.Color(1.7, 1.5, 1.2), toneMapped: false });
 const sun = new THREE.Mesh(new THREE.SphereGeometry(sunRadius, 96, 96), sunMat);
 sunGroup.add(sun);
 
@@ -309,7 +309,7 @@ function addCoronaSprite(scale, opacity, stops) {
   return s;
 }
 // A single, tight corona glow (the extra outer haze layers were removed).
-addCoronaSprite(sunRadius * 3.4, 0.9, ['rgba(255,210,120,0.85)', 'rgba(255,140,40,0.35)', 'rgba(255,90,30,0)']);
+addCoronaSprite(sunRadius * 3.4, 0.5, ['rgba(255,210,120,0.85)', 'rgba(255,140,40,0.35)', 'rgba(255,90,30,0)']);
 
 // ---- Lighting + image-based lighting (IBL) ----
 // A dim procedural "space" environment gives the PBR craft (metal/glass) believable
@@ -1996,8 +1996,8 @@ function updateLaunch(u) {
     const bloom = 1 + (1 - atmP) * 1.8;              // plume balloons wide in near-vacuum
     rd.core.scale.set(flick * (0.9 + 0.1 * atmP), throttle * (1.4 + u * 0.7) * flick, flick * (0.9 + 0.1 * atmP));
     rd.outer.scale.set(flick * bloom, throttle * (1.0 + (1 - atmP) * 0.9) * flick, flick * bloom);
-    rd.outer.material.opacity = 0.6 * (0.3 + 0.7 * atmP);
-    rd.core.material.opacity = 0.95;
+    rd.outer.material.opacity = 0.42 * (0.3 + 0.7 * atmP);
+    rd.core.material.opacity = 0.78;
   } else {
     rd.flameGrp.position.y = 0.45;
     const s2 = clamp01((u - EV.ign2) / 0.1) * secoFade;   // second-stage spin-up, cut off at SECO
@@ -2007,8 +2007,8 @@ function updateLaunch(u) {
     rd.core.material.opacity = 0.85 * s2;
   }
   rd.glow.visible = flameOn > 0.001;
-  rd.glow.scale.setScalar((staged ? 0.8 : 1.6 * (0.6 + 0.4 * atmP)) + Math.sin(elapsed * 26) * 0.25);
-  rd.light.intensity = flameOn * ((staged ? 1.0 : 1.5 * throttle) + Math.sin(elapsed * 40) * 0.4);
+  rd.glow.scale.setScalar((staged ? 0.5 : 1.05 * (0.6 + 0.4 * atmP)) + Math.sin(elapsed * 26) * 0.18);
+  rd.light.intensity = flameOn * ((staged ? 0.6 : 0.9 * throttle) + Math.sin(elapsed * 40) * 0.3);
 
   // Max-Q condensation cone.
   if (voyage.vaporCone) {
