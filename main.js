@@ -56,7 +56,7 @@ const hdrTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
 });
 const composer = new EffectComposer(renderer, hdrTarget);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.16, 0.5, 1.25);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.16, 0.32, 1.25);
 composer.addPass(bloom);
 
 // Cinematic grade — edge chromatic aberration + soft vignette + fine film grain.
@@ -309,7 +309,7 @@ function addCoronaSprite(scale, opacity, stops) {
   return s;
 }
 // A single, tight corona glow (the extra outer haze layers were removed).
-addCoronaSprite(sunRadius * 3.4, 0.5, ['rgba(255,210,120,0.85)', 'rgba(255,140,40,0.35)', 'rgba(255,90,30,0)']);
+addCoronaSprite(sunRadius * 2.3, 0.3, ['rgba(255,210,120,0.85)', 'rgba(255,140,40,0.35)', 'rgba(255,90,30,0)']);
 
 // ---- Lighting + image-based lighting (IBL) ----
 // A dim procedural "space" environment gives the PBR craft (metal/glass) believable
@@ -1996,8 +1996,8 @@ function updateLaunch(u) {
     const bloom = 1 + (1 - atmP) * 1.8;              // plume balloons wide in near-vacuum
     rd.core.scale.set(flick * (0.9 + 0.1 * atmP), throttle * (1.4 + u * 0.7) * flick, flick * (0.9 + 0.1 * atmP));
     rd.outer.scale.set(flick * bloom, throttle * (1.0 + (1 - atmP) * 0.9) * flick, flick * bloom);
-    rd.outer.material.opacity = 0.42 * (0.3 + 0.7 * atmP);
-    rd.core.material.opacity = 0.78;
+    rd.outer.material.opacity = 0.26 * (0.3 + 0.7 * atmP);
+    rd.core.material.opacity = 0.72;
   } else {
     rd.flameGrp.position.y = 0.45;
     const s2 = clamp01((u - EV.ign2) / 0.1) * secoFade;   // second-stage spin-up, cut off at SECO
@@ -2007,7 +2007,7 @@ function updateLaunch(u) {
     rd.core.material.opacity = 0.85 * s2;
   }
   rd.glow.visible = flameOn > 0.001;
-  rd.glow.scale.setScalar((staged ? 0.5 : 1.05 * (0.6 + 0.4 * atmP)) + Math.sin(elapsed * 26) * 0.18);
+  rd.glow.scale.setScalar((staged ? 0.32 : 0.62 * (0.6 + 0.4 * atmP)) + Math.sin(elapsed * 26) * 0.12);
   rd.light.intensity = flameOn * ((staged ? 0.6 : 0.9 * throttle) + Math.sin(elapsed * 40) * 0.3);
 
   // Max-Q condensation cone.
@@ -2072,7 +2072,7 @@ function updateLaunch(u) {
     sp.position.copy(PAD).addScaledVector(LAUNCH_N, colTop * f).addScaledVector(LAUNCH_T1, rng * colFrac * f);
     const heat = f * f;
     sp.material.color.setRGB(1, 0.55 + heat * 0.4, 0.42 + heat * 0.35);
-    sp.material.opacity = (0.2 + (1 - f) * 0.5) * (0.5 + u * 0.5) * (staged ? 0.3 : 1) * clamp01(1.15 - altFrac * 2.6);
+    sp.material.opacity = (0.12 + (1 - f) * 0.32) * (0.5 + u * 0.5) * (staged ? 0.3 : 1) * clamp01(1.15 - altFrac * 2.6);
     sp.scale.setScalar((0.3 + (1 - f) * 0.8) * LS);   // smaller puffs so the contrail doesn't read as bubbles
   });
 
@@ -2093,7 +2093,7 @@ function updateLaunch(u) {
       .addScaledVector(LAUNCH_N, lift * LS);
     const warm = clamp01(1 - life * 1.8) * clamp01(1 - lift * 0.7);  // engine glow only at the base, early
     sp.material.color.setRGB(0.62 + warm * 0.36, 0.6 + warm * 0.16, 0.58);  // smoke grey, warming to tan at the root
-    sp.material.opacity = (0.5 - life * 0.3) * clamp01(1.2 - altFrac * 1.6);
+    sp.material.opacity = (0.32 - life * 0.22) * clamp01(1.2 - altFrac * 1.6);
     sp.scale.setScalar(d.size * (0.55 + life * 1.4) * LS);  // expands modestly as it ages
   });
 
