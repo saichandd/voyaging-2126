@@ -56,7 +56,7 @@ const hdrTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
 });
 const composer = new EffectComposer(renderer, hdrTarget);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.16, 0.32, 1.25);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.16, 0.32, 1.45);
 composer.addPass(bloom);
 
 // Cinematic grade — edge chromatic aberration + soft vignette + fine film grain.
@@ -1375,10 +1375,13 @@ function buildRocket() {
     map: radialTexture(['rgba(255,225,160,0.95)', 'rgba(255,130,40,0.4)', 'rgba(255,60,20,0)']),
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
   }));
+  glow.material.opacity = 0.5;
   glow.scale.setScalar(1.7); glow.position.y = -0.7; flameGrp.add(glow);
   g.add(flameGrp);
 
-  const light = new THREE.PointLight(0xffcaa0, 1.5, 9, 2); light.position.y = -2.6; g.add(light);
+  // Warm engine fill. Short range + modest intensity so it doesn't blast the pad white
+  // at the new tiny launch scale (the sun key light already carries the vehicle).
+  const light = new THREE.PointLight(0xffcaa0, 1.5, 4, 2); light.position.y = -2.2; g.add(light);
 
   g.userData = { stage1, upper, flameGrp, core, outer, glow, light, fairing };
   g.scale.setScalar(0.10 * LS);
@@ -1996,8 +1999,8 @@ function updateLaunch(u) {
     const bloom = 1 + (1 - atmP) * 1.8;              // plume balloons wide in near-vacuum
     rd.core.scale.set(flick * (0.9 + 0.1 * atmP), throttle * (1.4 + u * 0.7) * flick, flick * (0.9 + 0.1 * atmP));
     rd.outer.scale.set(flick * bloom, throttle * (1.0 + (1 - atmP) * 0.9) * flick, flick * bloom);
-    rd.outer.material.opacity = 0.26 * (0.3 + 0.7 * atmP);
-    rd.core.material.opacity = 0.72;
+    rd.outer.material.opacity = 0.2 * (0.3 + 0.7 * atmP);
+    rd.core.material.opacity = 0.4;
   } else {
     rd.flameGrp.position.y = 0.45;
     const s2 = clamp01((u - EV.ign2) / 0.1) * secoFade;   // second-stage spin-up, cut off at SECO
@@ -2008,7 +2011,7 @@ function updateLaunch(u) {
   }
   rd.glow.visible = flameOn > 0.001;
   rd.glow.scale.setScalar((staged ? 0.32 : 0.62 * (0.6 + 0.4 * atmP)) + Math.sin(elapsed * 26) * 0.12);
-  rd.light.intensity = flameOn * ((staged ? 0.6 : 0.9 * throttle) + Math.sin(elapsed * 40) * 0.3);
+  rd.light.intensity = flameOn * ((staged ? 0.2 : 0.24 * throttle) + Math.sin(elapsed * 40) * 0.08);
 
   // Max-Q condensation cone.
   if (voyage.vaporCone) {
@@ -2072,7 +2075,7 @@ function updateLaunch(u) {
     sp.position.copy(PAD).addScaledVector(LAUNCH_N, colTop * f).addScaledVector(LAUNCH_T1, rng * colFrac * f);
     const heat = f * f;
     sp.material.color.setRGB(1, 0.55 + heat * 0.4, 0.42 + heat * 0.35);
-    sp.material.opacity = (0.12 + (1 - f) * 0.32) * (0.5 + u * 0.5) * (staged ? 0.3 : 1) * clamp01(1.15 - altFrac * 2.6);
+    sp.material.opacity = (0.08 + (1 - f) * 0.2) * (0.5 + u * 0.5) * (staged ? 0.3 : 1) * clamp01(1.15 - altFrac * 2.6);
     sp.scale.setScalar((0.3 + (1 - f) * 0.8) * LS);   // smaller puffs so the contrail doesn't read as bubbles
   });
 
