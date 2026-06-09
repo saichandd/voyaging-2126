@@ -1791,15 +1791,28 @@ function viewTarget(view, st, s, u = 0) {
   const side = new THREE.Vector3().crossVectors(vel, up).normalize();
   if (view === 'map') { const c = new THREE.Vector3(-12, 0, 0); return { pos: c.clone().add(new THREE.Vector3(20, 182, 92)), look: c }; }
   if (view === 'approach') {
-    // Zoom onto Mars from just behind/above the ship so the planet grows from a dot into
-    // a disc as the ship closes in; the station + docked shuttle read small in the foreground.
+    // Cinematic zoom: start far back so Mars is a distant rust-red disc with the station
+    // small in the foreground, then close in over the stage until the planet fills the frame.
     const mars = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(mars);
     const toMars = mars.clone().sub(ship); const dist = Math.max(0.001, toMars.length());
     toMars.normalize();
     const sideM = new THREE.Vector3().crossVectors(toMars, up).normalize();
     if (sideM.lengthSq() < 1e-4) sideM.set(1, 0, 0);
-    const pos = ship.clone().addScaledVector(toMars, -3.4).addScaledVector(up, 1.5).addScaledVector(sideM, 3.0);
+    const ez = u * u * (3 - 2 * u);                                  // smoothstep the closing
+    const D = THREE.MathUtils.lerp(dist + 22, 5.0, ez);             // camera distance from Mars, shrinking
+    const pos = mars.clone().addScaledVector(toMars, -D)
+      .addScaledVector(up, 1.4 + (1 - ez) * 2.0).addScaledVector(sideM, 1.8 + (1 - ez) * 3.0);
     return { pos, look: mars, fov: 40 };
+  }
+  if (view === 'arrival') {
+    // Close on the Endurance + docked shuttle in Mars orbit, the red world filling the
+    // background, just before the shuttle undocks for descent.
+    const mars = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(mars);
+    const toMars = mars.clone().sub(ship).normalize();
+    const sideM = new THREE.Vector3().crossVectors(toMars, up).normalize();
+    if (sideM.lengthSq() < 1e-4) sideM.set(1, 0, 0);
+    const pos = ship.clone().addScaledVector(toMars, -1.6).addScaledVector(up, 0.9).addScaledVector(sideM, 2.6);
+    return { pos, look: ship.clone().addScaledVector(toMars, 0.6), fov: 46 };
   }
   if (view === 'ring') { return { pos: ship.clone().addScaledVector(side, 2.3).addScaledVector(up, 0.85).addScaledVector(vel, 0.7), look: ship.clone() }; }
   if (view === 'endurance') {
@@ -2406,7 +2419,7 @@ function updateVoyage(dt) {
     if (ph.key === 'cruise') {
       view = u < 0.16 ? 'dock' : u < 0.38 ? 'endurance' : u < 0.60 ? 'chase' : u < 0.82 ? 'coast' : 'map';
     }
-    if (ph.key === 'approach') view = 'approach';
+    if (ph.key === 'approach') view = u < 0.82 ? 'approach' : 'arrival';
     cam = viewTarget(view, st, s, u);
   }
   // Aim the directional sun + shadow frustum at the current subject each frame so the
