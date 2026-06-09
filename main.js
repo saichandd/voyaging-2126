@@ -1207,7 +1207,7 @@ function buildLaunchSky() {
       void main(){
         float a = dot(vL, normalize(uUp));
         vec3 c = mix(uHorizon, uZenith, smoothstep(0.0, 0.8, max(a, 0.0)));
-        float alpha = uFade * smoothstep(-0.05, 0.25, a);   // fade below the horizon (ground covers it)
+        float alpha = uFade * smoothstep(-0.12, 0.02, a);   // opaque daytime sky (no stars), fading only at the horizon and with altitude
         gl_FragColor = vec4(c, clamp(alpha, 0.0, 1.0));
       }`,
   });
