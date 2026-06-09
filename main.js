@@ -91,6 +91,7 @@ const TAU = Math.PI * 2;
 // Shared lighting/scratch constants for the render overhaul.
 const SUN_DIR = new THREE.Vector3(40, 18, 25).normalize();   // env-bake sun direction (IBL highlight)
 const _tmpVec = new THREE.Vector3();
+const _shFwd = new THREE.Vector3(), _shRight = new THREE.Vector3(), _shUp = new THREE.Vector3(), _shLook = new THREE.Vector3();
 
 // ---- Texture loading (real photoreal maps live in /textures) ----
 const texLoader = new THREE.TextureLoader();
@@ -2290,7 +2291,36 @@ function updateVoyage(dt) {
   if (voyage.camUp.lengthSq() > 1e-6) voyage.camUp.normalize();
   camera.position.copy(voyage.camPos);
   camera.up.copy(voyage.camUp);
-  camera.lookAt(voyage.camLook);
+  // Cinematic shake: liftoff rumble + max-Q buffet + touchdown jolt. Applied here,
+  // after the position smoothing, so the high-frequency vibration isn't damped away.
+  const shakeAmp = stageShake(ph, u);
+  if (shakeAmp > 1e-4) {
+    const tt = voyage.t;
+    _shFwd.subVectors(voyage.camLook, voyage.camPos).normalize();
+    _shRight.crossVectors(_shFwd, voyage.camUp).normalize();
+    _shUp.crossVectors(_shRight, _shFwd).normalize();
+    const jx = (Math.sin(tt * 47.0) + 0.7 * Math.sin(tt * 31.3 + 1.1)) * shakeAmp;
+    const jy = (Math.sin(tt * 43.0 + 1.3) + 0.7 * Math.sin(tt * 27.7 + 0.6)) * shakeAmp;
+    camera.position.addScaledVector(_shRight, jx).addScaledVector(_shUp, jy);
+    _shLook.copy(voyage.camLook).addScaledVector(_shRight, -jx * 0.4).addScaledVector(_shUp, -jy * 0.4);
+    camera.lookAt(_shLook);
+  } else {
+    camera.lookAt(voyage.camLook);
+  }
+}
+
+// Camera shake amplitude (world units) by stage moment: rocket rumble at ignition,
+// a buffet through max-Q, and a hard jolt at Mars touchdown — zero everywhere else.
+function stageShake(ph, u) {
+  if (ph.mode === 'launch') {
+    const liftoff = clamp01(1 - u / 0.14) * 0.038;                             // big at ignition, fades fast
+    const maxQ = Math.exp(-Math.pow((u - EV.maxQ) / 0.05, 2)) * 0.02;          // buffet bump around max-Q
+    return liftoff + maxQ;
+  }
+  if (ph.mode === 'edl') {
+    return u >= EDL.TOUCH ? clamp01(1 - (u - EDL.TOUCH) / 0.035) * 0.04 : 0;   // jolt on contact, decays
+  }
+  return 0;
 }
 
 function setVoyagePlay(p) {
