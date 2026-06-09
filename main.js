@@ -1066,7 +1066,7 @@ function buildLiner() {
   g.userData.trail = trail;
   g.userData.plume = plume;
   g.userData.legs = legs;
-  g.scale.setScalar(0.26);
+  g.scale.setScalar(0.26 * MS);
   return g;
 }
 
@@ -1116,7 +1116,7 @@ function buildEndurance() {
   const fill = new THREE.PointLight(0xbfe6ff, 0.6, 36, 2); fill.position.set(0, 5, 2); g.add(fill);
 
   g.userData.ring = ringGrp;
-  g.scale.setScalar(0.5);
+  g.scale.setScalar(0.5 * MS);
   return g;
 }
 
@@ -1162,6 +1162,11 @@ const LS = 0.10;
 // believable arc and the cameras stay put, but the vehicle reads ~10x smaller in frame
 // (a tiny craft on a vast Earth) rather than filling it.
 const RM = 0.1;
+// Mothership/shuttle shrink: scales the Endurance + crew shuttle models, the cameras that
+// frame them, their docking offsets and the shuttle's Mars-landing rest height together,
+// so the whole deep-space rig reads ~10x smaller (to-scale vs the planets) without floating
+// craft or mis-framed shots.
+const MS = 0.1;
 const LAUNCH_MAXALT = 3.5 * LS, LAUNCH_RANGE = 3.5 * LS, ROCKET_BASE = 0.5 * LS;  // ascent shaping (scene units)
 // Shared launch + EDL event timelines (progress u in [0,1]) so motion, plume, camera
 // and telemetry stay in sync.
@@ -2203,7 +2208,7 @@ function updateEDL(u) {
     const hover = Math.pow(clamp01((1 - uu) / (1 - EDL.BURN)), 2.0);
     const a = uu < EDL.BURN ? (7.0 * fall + 1.5) : (1.5 * hover);
     const lat = Math.pow(clamp01((EDL.PITCH - uu) / EDL.PITCH), 1.2) * 4.5;
-    return M.clone().addScaledVector(dir, mR + a + 0.48).addScaledVector(tang, lat);
+    return M.clone().addScaledVector(dir, mR + a + 0.48 * MS).addScaledVector(tang, lat);
   };
   const pos = dpos(u);
   const alt = pos.distanceTo(M) - mR;
@@ -2224,9 +2229,9 @@ function updateEDL(u) {
   voyage.flash.visible = inEntry;
   if (inEntry) {
     const heat = clamp01(1 - Math.abs(u - 0.24) / 0.14);   // plasma peaks after undock, fades before aerobrake
-    voyage.flash.position.copy(pos).addScaledVector(velDir, 0.35);   // glow just ahead of the heat shield
+    voyage.flash.position.copy(pos).addScaledVector(velDir, 0.35 * MS);   // glow just ahead of the heat shield
     voyage.flash.material.opacity = heat * 0.55;
-    voyage.flash.scale.setScalar(0.5 + heat * 0.9);
+    voyage.flash.scale.setScalar((0.5 + heat * 0.9) * MS);
     sd.trail.material.color.setHex(0xff7a32); sd.trail.material.opacity = heat * 0.6;
     sd.trail.scale.set(0.9 + heat * 0.6, 1.8 + heat * 1.8, 1);
   }
@@ -2243,22 +2248,22 @@ function updateEDL(u) {
 
   // Dust + a few lofted debris kicked up by the burn near touchdown; settles after.
   if (voyage.dust) {
-    const active = (landing && alt < 2.4) || (touched && u < 0.998);
+    const active = (landing && alt < 2.4 * MS) || (touched && u < 0.998);
     voyage.dust.visible = active;
     if (active) {
       // Builds as the retro plume nears the ground, peaks at touchdown, then hangs
       // and slowly settles — a reddish Mars dust wall blown out flat across the pad.
       const settle = touched ? clamp01((0.998 - u) / 0.05) : 1;
-      const amp = touched ? settle : clamp01((2.4 - alt) / 2.2);
-      voyage.dust.position.copy(M).addScaledVector(dir, mR + 0.04);
+      const amp = touched ? settle : clamp01((2.4 * MS - alt) / (2.2 * MS));
+      voyage.dust.position.copy(M).addScaledVector(dir, mR + 0.04 * MS);
       voyage.dust.quaternion.setFromUnitVectors(UP, dir);
       voyage.dust.userData.parts.forEach((p, i) => {
         const debris = (i % 7 === 0);
-        const reach = amp * p.userData.speed * (debris ? 1.8 : 1.5);
+        const reach = amp * p.userData.speed * (debris ? 1.8 : 1.5) * MS;
         const lift = debris ? 0.5 : 0.16;                       // billows wide and flat, hugging the ground
         p.position.set(p.userData.dir.x * reach, Math.abs(p.userData.dir.y) * reach * lift, p.userData.dir.z * reach);
         p.material.opacity = amp * (debris ? 0.65 : 0.6) * (1 - amp * 0.2);
-        p.scale.setScalar(p.userData.size * (debris ? 0.7 : 1.3) * (1 + reach * 0.9));
+        p.scale.setScalar(p.userData.size * (debris ? 0.7 : 1.3) * (1 + reach * 0.9) * MS);
       });
     }
   }
@@ -2270,18 +2275,20 @@ function updateEDL(u) {
 
   // Camera: undock → high entry shot → tracking the descent → low ground-level burn + landing.
   let camP, lookP, fov;
+  // The shuttle is the focus through EDL, so its chase offsets scale with the (now 10x
+  // smaller) craft — keeping it framed as a real lander against Mars, not a speck.
   if (u < 0.12) {                              // undock: the shuttle drops away from the Endurance, Mars below
-    camP = pos.clone().addScaledVector(cross, 4.6).addScaledVector(dir, 0.6).addScaledVector(tang, 0.6);
-    lookP = pos.clone().addScaledVector(tang, -0.6).addScaledVector(dir, -1.1); fov = 52;   // craft centred, Mars below
+    camP = pos.clone().addScaledVector(cross, 4.6 * MS).addScaledVector(dir, 0.6 * MS).addScaledVector(tang, 0.6 * MS);
+    lookP = pos.clone().addScaledVector(tang, -0.6 * MS).addScaledVector(dir, -1.1 * MS); fov = 52;   // craft centred, Mars below
   } else if (u < EDL.AERO) {
-    camP = pos.clone().addScaledVector(cross, 3.0).addScaledVector(dir, 1.4).addScaledVector(tang, 2.0);
-    lookP = pos.clone().addScaledVector(velDir, 1.4); fov = 50;
+    camP = pos.clone().addScaledVector(cross, 3.0 * MS).addScaledVector(dir, 1.4 * MS).addScaledVector(tang, 2.0 * MS);
+    lookP = pos.clone().addScaledVector(velDir, 1.4 * MS); fov = 50;
   } else if (u < EDL.BURN + 0.05) {
-    camP = pos.clone().addScaledVector(cross, 2.2).addScaledVector(dir, 0.6).addScaledVector(tang, 1.1);
-    lookP = pos.clone().addScaledVector(dir, -0.1); fov = 44;
+    camP = pos.clone().addScaledVector(cross, 2.2 * MS).addScaledVector(dir, 0.6 * MS).addScaledVector(tang, 1.1 * MS);
+    lookP = pos.clone().addScaledVector(dir, -0.1 * MS); fov = 44;
   } else {
-    camP = pos.clone().addScaledVector(cross, 1.9).addScaledVector(dir, 0.5).addScaledVector(tang, 0.8);
-    lookP = pos.clone().addScaledVector(dir, -0.15); fov = 40;
+    camP = pos.clone().addScaledVector(cross, 1.9 * MS).addScaledVector(dir, 0.5 * MS).addScaledVector(tang, 0.8 * MS);
+    lookP = pos.clone().addScaledVector(dir, -0.15 * MS); fov = 40;
   }
   return { pos: camP, look: lookP, fov, up: dir };
 }
@@ -2324,15 +2331,15 @@ function updateHelio(ph, u, dt) {
     // then rides along docked for the rest of the coast + approach.
     voyage.ship.visible = true;
     const sd = voyage.ship.userData;
-    const docked = st.pos.clone().addScaledVector(fwd, 1.5);
+    const docked = st.pos.clone().addScaledVector(fwd, 1.5 * MS);
     if (ph.key === 'cruise') {
       const dockT = clamp01(u / 0.10);
       const appr = Math.pow(1 - dockT, 1.4);              // 1 = approaching, 0 = docked
       const side = new THREE.Vector3().crossVectors(fwd, UP).normalize();
       voyage.ship.position.copy(docked)
-        .addScaledVector(fwd, -appr * 5.0)
-        .addScaledVector(UP, -appr * 2.8)
-        .addScaledVector(side, appr * 1.6);
+        .addScaledVector(fwd, -appr * 5.0 * MS)
+        .addScaledVector(UP, -appr * 2.8 * MS)
+        .addScaledVector(side, appr * 1.6 * MS);
       const burning = appr > 0.04;                         // docking maneuver burn
       sd.plume.visible = burning;
       sd.plume.scale.set(1, 1, 1);
@@ -2525,10 +2532,10 @@ function updateVoyage(dt) {
   // Aim the directional sun + shadow frustum at the current subject each frame so the
   // craft are lit from the same direction as the planet shaders (sun at the origin).
   let _subj = null, _srad = 5;
-  if (ph.mode === 'launch') { _subj = voyage.rocket.position; _srad = 3.5; }
-  else if (ph.mode === 'edl') { _subj = voyage.ship.position; _srad = 4; }
+  if (ph.mode === 'launch') { _subj = voyage.rocket.position; _srad = 3.5 * RM; }
+  else if (ph.mode === 'edl') { _subj = voyage.ship.position; _srad = 4 * MS; }
   else if (ph.key === 'surface') { _subj = voyage.base.position; _srad = 5; }
-  else if (voyage.station && voyage.station.visible) { _subj = voyage.station.position; _srad = 4; }
+  else if (voyage.station && voyage.station.visible) { _subj = voyage.station.position; _srad = 4 * MS; }
   if (_subj) frameSunShadow(_subj, _srad);
 
   // Per-stage focal length (stages may return a `fov`): snap on seek, ease while playing.
