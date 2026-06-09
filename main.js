@@ -1864,19 +1864,22 @@ function viewTarget(view, st, s, u = 0) {
     return { pos, look };
   }
   if (view === 'surface') {
-    // Low "boots on the ground" hero shot: camera just above the surface, set back from
-    // the colony, looking across it so the planet curves to a real horizon in the upper
-    // third and the ground cap fills the foreground. Long-ish lens so the domes loom.
+    // Cinematic colony tour: a low "boots on the ground" hero shot that orbits a quarter-turn
+    // while craning up to a high survey of the base mid-stage, then settling back low — the
+    // planet curving to a real horizon, the domes looming. up = surface normal so it reads level.
     const m = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(m);
     const mR = planetMeshes.mars.config.size;
     const B = m.clone().addScaledVector(BASE_N, mR * 1.002);          // the colony's ground point
     const t1 = new THREE.Vector3().crossVectors(BASE_N, UP).normalize();
     const t2 = new THREE.Vector3().crossVectors(t1, BASE_N).normalize();
-    const drift = Math.sin(elapsed * 0.12) * 0.22;                    // slow cinematic orbit
-    const back = t1.clone().multiplyScalar(-1.7).applyAxisAngle(BASE_N, drift);
-    const pos = B.clone().addScaledVector(BASE_N, 0.8).add(back).addScaledVector(t2, 1.0);
-    const look = B.clone().addScaledVector(BASE_N, 0.16).addScaledVector(t1, 0.15);
-    return { pos, look, fov: 44, up: BASE_N };                        // up = surface normal so it reads level
+    const arc = Math.sin(u * Math.PI);                               // 0 at the ends, 1 mid-stage
+    const ang = (u - 0.5) * 1.4 + Math.sin(elapsed * 0.1) * 0.06;    // quarter-turn orbit + live drift
+    const height = 0.8 + arc * 2.6;                                  // low → high survey → low
+    const dist = 1.7 + (1 - arc) * 0.6;
+    const radial = t1.clone().multiplyScalar(-dist).applyAxisAngle(BASE_N, ang);
+    const pos = B.clone().addScaledVector(BASE_N, height).add(radial).addScaledVector(t2, 1.0 - arc * 0.5);
+    const look = B.clone().addScaledVector(BASE_N, 0.16 + arc * 0.5).addScaledVector(t1, 0.15);
+    return { pos, look, fov: 44, up: BASE_N };
   }
   const mars = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(mars);
   return { pos: ship.clone().addScaledVector(vel, -10).addScaledVector(up, 5).addScaledVector(side, 6), look: mars };
