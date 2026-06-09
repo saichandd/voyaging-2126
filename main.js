@@ -1162,6 +1162,15 @@ const CRUISE_CALLOUTS = [
   { at: 0.84, tag: 'KEPLER II', text: "Watch the speed bleed off as we climb away from the Sun — Kepler's 2nd law, made visible." },
   { at: 0.93, tag: 'MARS AHEAD', text: 'Mars brightens from a star into a disc dead ahead. Arrival is near.' },
 ];
+// Approach flight-log: the final closing on Mars, from rust-red star to a world below.
+const APPROACH_CALLOUTS = [
+  { at: 0.00, tag: 'MARS IN SIGHT', text: 'Mars dead ahead — a rust-red star, brightening by the day after eight months.' },
+  { at: 0.22, tag: 'RESOLVING', text: 'It swells from a point into a disc; polar caps and dark plains resolve out of the glare.' },
+  { at: 0.42, tag: 'FINAL APPROACH', text: 'Closing fast. The lag to Earth has stretched past twenty minutes each way — we are on our own.' },
+  { at: 0.60, tag: 'ORBIT INSERTION', text: 'Capture burn — the Endurance brakes into a parking orbit around Mars.' },
+  { at: 0.78, tag: 'PARKING ORBIT', text: 'In orbit at last. The red world fills the windows; the landing shuttle is powered up.' },
+  { at: 0.90, tag: 'UNDOCK PREP', text: 'The crew boards the shuttle. Final checks before separating for the descent.' },
+];
 const EDL = { ENTRY: 0.16, AERO: 0.42, PITCH: 0.55, BURN: 0.62, TOUCH: 0.965 };
 
 function earthGroundTexture(s = 1024) {
@@ -1727,7 +1736,7 @@ const PHASES = [
     ]
   },
   {
-    key: 'approach', label: '03 · APPROACH', short: 'APPROACH', dur: 4, mode: 'helio', s0: 0.78, s1: 0.94, view: 'map',
+    key: 'approach', label: '03 · APPROACH', short: 'APPROACH', dur: 70, mode: 'helio', s0: 0.78, s1: 0.94, view: 'approach',
     tag: 'STAGE 03 · APPROACH',
     facts: [
       'Mars grows from a dot into a disc over the final weeks',
