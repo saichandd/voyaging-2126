@@ -1150,7 +1150,7 @@ const LAUNCH_N = new THREE.Vector3(-0.5, 0.55, 0.67).normalize();              /
 const LAUNCH_T1 = new THREE.Vector3().crossVectors(LAUNCH_N, UP).normalize();  // downrange / gravity-turn axis
 const LAUNCH_T2 = new THREE.Vector3().crossVectors(LAUNCH_T1, LAUNCH_N).normalize();
 const PAD = E_POS.clone().addScaledVector(LAUNCH_N, E_R);                       // pad point on Earth's surface
-const LAUNCH_MAXALT = 7.0, LAUNCH_RANGE = 6.0, ROCKET_BASE = 0.5;              // ascent shaping (scene units)
+const LAUNCH_MAXALT = 3.5, LAUNCH_RANGE = 3.5, ROCKET_BASE = 0.5;              // ascent shaping (scene units)
 // Shared launch + EDL event timelines (progress u in [0,1]) so motion, plume, camera
 // and telemetry stay in sync.
 const EV = { hold: 0.025, tower: 0.06, roll: 0.09, pitch: 0.15, maxQ: 0.25, meco: 0.46, sep: 0.49, ign2: 0.54, fairing: 0.63, tilt: 0.80, seco: 0.96 };
@@ -1270,7 +1270,7 @@ function buildLaunchPad() {
   for (let j = 1; j < 8; j++) { const cr = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.46), steel); cr.position.y = j * 0.44; tower.add(cr); }
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.12), steel); arm.position.set(-0.45, 3.1, 0); tower.add(arm);
   g.add(tower);
-  g.scale.setScalar(0.3);
+  g.scale.setScalar(0.19);
   return g;
 }
 function buildLaunchSky() {
@@ -1359,7 +1359,7 @@ function buildRocket() {
   const light = new THREE.PointLight(0xffcaa0, 1.5, 9, 2); light.position.y = -2.6; g.add(light);
 
   g.userData = { stage1, upper, flameGrp, core, outer, glow, light, fairing };
-  g.scale.setScalar(0.16);
+  g.scale.setScalar(0.10);
   return g;
 }
 
@@ -1383,7 +1383,7 @@ function buildSpentStage() {
     const fin = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.8, 0.5), dark);
     fin.position.set(Math.cos(a) * 0.46, -2.3, Math.sin(a) * 0.46); fin.rotation.y = -a; g.add(fin);
   }
-  g.scale.setScalar(0.16);
+  g.scale.setScalar(0.10);
   return g;
 }
 
@@ -2111,7 +2111,7 @@ function updateLaunch(u) {
     lookP = pos.clone().addScaledVector(up, 0.1); fov = 44;
   } else if (u < EV.seco) {                    // ascent to orbit: the climbing stage high over Earth's curving limb
     camP = pos.clone().addScaledVector(side, 4.4).addScaledVector(up, 1.4).addScaledVector(fwd, -2.0);
-    lookP = pos.clone().addScaledVector(up, -4.0).addScaledVector(fwd, -2.5); fov = 54;   // tilt down to Earth below
+    lookP = pos.clone().addScaledVector(up, -2.5).addScaledVector(fwd, -2.0); fov = 54;   // tilt down to Earth below
   } else {                                     // SECO / orbit: close on the now-coasting stage, sunlit, Earth behind
     camP = pos.clone().addScaledVector(side, 2.2).addScaledVector(up, 0.5).addScaledVector(fwd, -1.2);
     lookP = pos.clone().addScaledVector(up, -0.6).addScaledVector(fwd, -0.2); fov = 46;
