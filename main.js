@@ -1183,6 +1183,15 @@ const EDL_CALLOUTS = [
   { at: 0.85, tag: 'FINAL DESCENT', text: 'Throttling down, feeling for the ground. Landing legs deployed.' },
   { at: 0.97, tag: 'TOUCHDOWN', text: 'Touchdown on Mars. The dust settles. After eight months — you have arrived.' },
 ];
+// Surface Operations flight-log: a tour of the colony you've travelled 480 million km to reach.
+const SURFACE_CALLOUTS = [
+  { at: 0.00, tag: 'BOOTS ON MARS', text: 'Boots on Mars. The shuttle stands on the red plain beside the colony.' },
+  { at: 0.16, tag: 'THE COLONY', text: 'Pressurized domes, habitat modules, and the first Starships that came before — home now.' },
+  { at: 0.34, tag: 'POWER & AIR', text: 'Solar arrays drink the weak Martian sun; inside, the air is kept at a comfortable 18°C.' },
+  { at: 0.52, tag: 'LOW GRAVITY', text: 'Gravity is just 38% of Earth’s — yet after months in near-zero g, many can barely stand.' },
+  { at: 0.70, tag: 'THE FRONTIER', text: 'Water ice mined from below, oxygen split from the thin air — a foothold on another world.' },
+  { at: 0.87, tag: 'WELCOME', text: 'Welcome to Mars. The journey that began on a launch pad ends here, 480 million km from home.' },
+];
 const EDL = { ENTRY: 0.16, AERO: 0.42, PITCH: 0.55, BURN: 0.62, TOUCH: 0.965 };
 
 function earthGroundTexture(s = 1024) {
@@ -1765,7 +1774,7 @@ const PHASES = [
     ]
   },
   {
-    key: 'surface', label: '05 · SURFACE OPERATIONS', short: 'SURFACE OPS', dur: 16, mode: 'helio', s0: 1.0, s1: 1.0, view: 'surface',
+    key: 'surface', label: '05 · SURFACE OPERATIONS', short: 'SURFACE OPS', dur: 45, mode: 'helio', s0: 1.0, s1: 1.0, view: 'surface',
     tag: 'STAGE 05 · SURFACE OPERATIONS',
     facts: [
       'journey would not be complete in 8.5 months and ~480 million km after launch.',
