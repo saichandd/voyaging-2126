@@ -1232,14 +1232,21 @@ const SURFACE_CALLOUTS = [
 const EDL = { ENTRY: 0.16, AERO: 0.42, PITCH: 0.55, BURN: 0.62, TOUCH: 0.965 };
 
 function earthGroundTexture(s = 1024) {
+  // Barren high-desert floor — the dry tan/sand palette of the California Mojave around
+  // Edwards/Mojave Air & Space Port: pale sand mottled with dust, scrub and dark gravel.
   const c = document.createElement('canvas'); c.width = c.height = s; const x = c.getContext('2d');
-  x.fillStyle = '#5f6b3c'; x.fillRect(0, 0, s, s);
-  for (let i = 0; i < 1600; i++) {
-    const r = 8 + Math.random() * 72, t = Math.random();
-    x.fillStyle = t < 0.4 ? `rgba(74,92,48,${0.06 + Math.random() * 0.14})`
-      : t < 0.75 ? `rgba(118,104,64,${0.05 + Math.random() * 0.12})`
-        : `rgba(48,66,38,${0.06 + Math.random() * 0.14})`;
+  x.fillStyle = '#b49a6e'; x.fillRect(0, 0, s, s);
+  for (let i = 0; i < 1700; i++) {
+    const r = 8 + Math.random() * 74, t = Math.random();
+    x.fillStyle = t < 0.42 ? `rgba(196,174,132,${0.06 + Math.random() * 0.13})`   // light sand patches
+      : t < 0.78 ? `rgba(150,124,84,${0.05 + Math.random() * 0.12})`              // tan dust
+        : `rgba(104,84,56,${0.06 + Math.random() * 0.14})`;                       // dark gravel / scrub
     x.beginPath(); x.arc(Math.random() * s, Math.random() * s, r, 0, TAU); x.fill();
+  }
+  // A scatter of small dark stones/brush so the ground isn't a flat wash up close.
+  for (let i = 0; i < 700; i++) {
+    x.fillStyle = `rgba(72,58,40,${0.18 + Math.random() * 0.28})`;
+    x.beginPath(); x.arc(Math.random() * s, Math.random() * s, 1 + Math.random() * 3, 0, TAU); x.fill();
   }
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(5, 5);
@@ -1261,14 +1268,14 @@ function buildEarthGround() {
 // horizon to "stand on" for the opening shot, then fades out as the camera cranes up —
 // revealing the genuinely curved globe beneath, which is the curvature reveal itself.
 function buildLaunchField() {
-  const tex = earthGroundTexture(); tex.repeat.set(26, 26);
+  const tex = earthGroundTexture(); tex.repeat.set(60, 60);
   const mat = new THREE.MeshStandardMaterial({
-    map: tex, color: 0x707d49, roughness: 1.0, metalness: 0.0, envMapIntensity: 0.3,
+    map: tex, color: 0xb09674, roughness: 1.0, metalness: 0.0, envMapIntensity: 0.3,
     transparent: true, opacity: 1.0, side: THREE.DoubleSide, depthWrite: true,
   });
   const m = new THREE.Mesh(new THREE.CircleGeometry(30, 72), mat);
   m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), LAUNCH_N);   // disc normal -> surface up
-  m.position.copy(PAD).addScaledVector(LAUNCH_N, 0.012);                    // sit just above the globe cap
+  m.position.copy(PAD).addScaledVector(LAUNCH_N, 0.0008);                   // sit right at the pad surface
   m.receiveShadow = true;
   m.renderOrder = -0.4;
   return m;
@@ -1957,10 +1964,16 @@ function updateLaunch(u) {
   if (voyage.station) voyage.station.visible = false;
   voyage.rocket.visible = voyage.launchTrail.visible = true;
   if (voyage.groundSmoke) voyage.groundSmoke.visible = true;
-  // No flat foreground field and no fade trick: the rocket sits on the real Earth globe and
-  // the camera physically pulls back so the curvature is revealed by the zoom-out itself.
+  // Barren California high-desert floor for the ground shot — a flat tan plain reaching a
+  // real horizon. It stays solid through the low climb, then recedes (fades) as the rocket
+  // ascends and the curved Earth comes up beneath, so it's the ground falling away, not a
+  // trick transition.
   if (voyage.earthGround) voyage.earthGround.visible = false;
-  if (voyage.launchField) voyage.launchField.visible = false;
+  if (voyage.launchField) {
+    const fieldFade = clamp01(1 - (u - 0.15) / 0.06);    // solid through the held ground shot, gone as we lift
+    voyage.launchField.visible = fieldFade > 0.01;
+    voyage.launchField.material.opacity = fieldFade;
+  }
   if (voyage.marsSky) voyage.marsSky.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = true;
   if (voyage.launchSky) voyage.launchSky.visible = true;
@@ -2121,22 +2134,26 @@ function updateLaunch(u) {
 
   // Camera: a broadcast-style sequence of beats, each timed to a flight event.
   const up = LAUNCH_N, side = LAUNCH_T2, fwd = LAUNCH_T1;
-  const CRANE = 0.16;
+  const CRANE = 0.28;
   let camP, lookP, fov = 50;
-  if (u < CRANE) {                             // open CLOSE on the rocket standing on the pad, then pull
-    const r = clamp01(u / CRANE);              // back so Earth's limb curves in — a real zoom-out, no fade
-    const ease = r * r * (3 - 2 * r);          // smoothstep the move
+  if (u < CRANE) {                             // open low on the barren plain looking toward the horizon,
+    const r = clamp01(u / CRANE);              // the rocket on the pad. LINGER close for the first half,
+    const hold = 0.5;                          // then slowly pull back and up to the wide-Earth reveal.
+    const e = clamp01((r - hold) / (1 - hold));
+    const ease = e * e * (3 - 2 * e);          // smooth back-half pull-back only
     const rf = LS * RM;                        // the rocket's own scale — close framing rides this
-    // Near: a ground-level hero shot right beside the vehicle (framed by its own size).
+    const drift = r * 1.0;                     // a slow dolly so the held hero shot still breathes
+    // Near: a low, ground-level angle looking out across the desert toward the horizon, the
+    // rocket standing in frame (eye roughly at the vehicle's mid-height = near horizontal).
     const near = pos.clone()
-      .addScaledVector(fwd, -1.7 * rf).addScaledVector(side, -1.0 * rf).addScaledVector(up, -0.4 * rf);
-    const nearLook = pos.clone().addScaledVector(up, 0.4 * rf);
+      .addScaledVector(fwd, (-2.7 - drift) * rf).addScaledVector(side, -1.4 * rf).addScaledVector(up, (0.15 + drift * 0.5) * rf);
+    const nearLook = pos.clone().addScaledVector(fwd, 7.0 * rf).addScaledVector(up, 0.05 * rf);   // toward the horizon
     // Far: pulled back and up to the wide reveal where the rocket is a speck on a vast Earth.
     const far = PAD.clone()
       .addScaledVector(up, 3.7 * LS).addScaledVector(fwd, -7.2 * LS).addScaledVector(side, -3.6 * LS);
     camP = near.lerp(far, ease);
     lookP = nearLook.lerp(pos.clone(), ease);
-    fov = 38 + ease * 14;                       // tight hero → wide reveal
+    fov = 44 + ease * 8;                        // wider horizon look → wide reveal
   } else if (u < EV.maxQ) {                    // downrange tracking pedestal — rocket climbing against curved Earth
     camP = pos.clone().addScaledVector(side, 3.4 * LS).addScaledVector(up, 0.4 * LS).addScaledVector(fwd, -1.8 * LS);
     lookP = pos.clone().addScaledVector(vel, 1.0 * LS); fov = 40;
