@@ -705,23 +705,14 @@ function buildPlanet(p) {
   mesh.receiveShadow = true;
   tiltGroup.add(mesh);
 
-  // Atmosphere for select planets — bright at silhouette, near-transparent at center
-  if (p.key === 'earth') tiltGroup.add(makeAtmosphere(p.size * 1.15, 0x5aa6ff, 1.9));
+  // Atmosphere for select planets — bright at silhouette, near-transparent at center.
+  // Earth and Mars are left bare (no atmosphere halo, no clouds) — the user finds the
+  // hazy shells distracting and wants the clean planet surface.
   if (p.key === 'venus') tiltGroup.add(makeAtmosphere(p.size * 1.16, 0xffd49a, 1.4));
-  if (p.key === 'mars') tiltGroup.add(makeAtmosphere(p.size * 1.09, 0xff8a4a, 0.9));
   if (p.key === 'jupiter') tiltGroup.add(makeAtmosphere(p.size * 1.05, 0xffd0a0, 0.6));
   if (p.key === 'saturn') tiltGroup.add(makeAtmosphere(p.size * 1.04, 0xc8b48a, 0.35));
   if (p.key === 'uranus') tiltGroup.add(makeAtmosphere(p.size * 1.10, 0xa0eef0, 0.9));
   if (p.key === 'neptune') tiltGroup.add(makeAtmosphere(p.size * 1.10, 0x6090ff, 1.0));
-
-  // Earth: real drifting cloud shell (colour doubles as the alpha mask).
-  if (p.key === 'earth') {
-    const cloudTex = loadTex('earth_clouds_2048.png', { srgb: true });
-    const clouds = new THREE.Mesh(new THREE.SphereGeometry(p.size * 1.03, 96, 96),
-      new THREE.MeshStandardMaterial({ map: cloudTex, alphaMap: cloudTex, transparent: true, depthWrite: false, roughness: 1.0, metalness: 0.0 }));
-    mesh.add(clouds);
-    mesh.userData.clouds = clouds;
-  }
 
   // Saturn rings
   if (p.special === 'rings') {
@@ -2132,49 +2123,49 @@ function updateLaunch(u) {
     voyage.launchSky.visible = atmP > 0.02;
   }
 
-  // Camera: a broadcast-style sequence of beats, each timed to a flight event.
+  // Camera: a broadcast-style sequence of beats, each timed to a flight event. All offsets
+  // ride the rocket's own scale (rf = LS·RM) so the chase stays CLOSE on the small vehicle
+  // through the whole ascent — Earth fills the background at its true size, the rocket isn't
+  // a far-off speck.
   const up = LAUNCH_N, side = LAUNCH_T2, fwd = LAUNCH_T1;
+  const rf = LS * RM;
   const CRANE = 0.28;
   let camP, lookP, fov = 50;
   if (u < CRANE) {                             // open low on the barren plain looking toward the horizon,
     const r = clamp01(u / CRANE);              // the rocket on the pad. LINGER close for the first half,
-    const hold = 0.5;                          // then slowly pull back and up to the wide-Earth reveal.
+    const hold = 0.5;                          // then ease up and slightly back as it lifts — staying close.
     const e = clamp01((r - hold) / (1 - hold));
-    const ease = e * e * (3 - 2 * e);          // smooth back-half pull-back only
-    const rf = LS * RM;                        // the rocket's own scale — close framing rides this
+    const ease = e * e * (3 - 2 * e);
     const drift = r * 1.0;                     // a slow dolly so the held hero shot still breathes
-    // Near: a low, ground-level angle looking out across the desert toward the horizon, the
-    // rocket standing in frame (eye roughly at the vehicle's mid-height = near horizontal).
     const near = pos.clone()
       .addScaledVector(fwd, (-2.7 - drift) * rf).addScaledVector(side, -1.4 * rf).addScaledVector(up, (0.15 + drift * 0.5) * rf);
     const nearLook = pos.clone().addScaledVector(fwd, 7.0 * rf).addScaledVector(up, 0.05 * rf);   // toward the horizon
-    // Far: pulled back and up to the wide reveal where the rocket is a speck on a vast Earth.
-    const far = PAD.clone()
-      .addScaledVector(up, 3.7 * LS).addScaledVector(fwd, -7.2 * LS).addScaledVector(side, -3.6 * LS);
+    // End on a close tracking pedestal (still on the vehicle) rather than a far wide shot.
+    const far = pos.clone().addScaledVector(side, 3.4 * rf).addScaledVector(up, 0.8 * rf).addScaledVector(fwd, -1.8 * rf);
     camP = near.lerp(far, ease);
     lookP = nearLook.lerp(pos.clone(), ease);
-    fov = 44 + ease * 8;                        // wider horizon look → wide reveal
+    fov = 44 - ease * 4;
   } else if (u < EV.maxQ) {                    // downrange tracking pedestal — rocket climbing against curved Earth
-    camP = pos.clone().addScaledVector(side, 3.4 * LS).addScaledVector(up, 0.4 * LS).addScaledVector(fwd, -1.8 * LS);
-    lookP = pos.clone().addScaledVector(vel, 1.0 * LS); fov = 40;
+    camP = pos.clone().addScaledVector(side, 3.4 * rf).addScaledVector(up, 0.4 * rf).addScaledVector(fwd, -1.8 * rf);
+    lookP = pos.clone().addScaledVector(vel, 1.0 * rf); fov = 40;
   } else if (u < EV.meco) {                    // long-lens chase through max-Q and the high climb
-    camP = pos.clone().addScaledVector(side, 2.6 * LS).addScaledVector(up, 0.2 * LS).addScaledVector(fwd, -0.7 * LS);
-    lookP = pos.clone().addScaledVector(up, 0.5 * LS); fov = 34;
+    camP = pos.clone().addScaledVector(side, 2.6 * rf).addScaledVector(up, 0.2 * rf).addScaledVector(fwd, -0.7 * rf);
+    lookP = pos.clone().addScaledVector(up, 0.5 * rf); fov = 34;
   } else if (u < EV.ign2) {                    // MECO + staging: pull back so the booster is seen falling away
-    camP = pos.clone().addScaledVector(side, 3.0 * LS).addScaledVector(up, 0.7 * LS).addScaledVector(fwd, -2.2 * LS);
-    lookP = pos.clone().addScaledVector(up, -0.7 * LS); fov = 38;   // frame the gap between the stages
+    camP = pos.clone().addScaledVector(side, 3.0 * rf).addScaledVector(up, 0.7 * rf).addScaledVector(fwd, -2.2 * rf);
+    lookP = pos.clone().addScaledVector(up, -0.7 * rf); fov = 38;   // frame the gap between the stages
   } else if (u < EV.fairing) {                 // second-stage ignition: tight on the upper stage lighting
-    camP = pos.clone().addScaledVector(side, 2.0 * LS).addScaledVector(up, 0.5 * LS).addScaledVector(fwd, -1.1 * LS);
-    lookP = pos.clone().addScaledVector(up, -0.2 * LS); fov = 40;
+    camP = pos.clone().addScaledVector(side, 2.0 * rf).addScaledVector(up, 0.5 * rf).addScaledVector(fwd, -1.1 * rf);
+    lookP = pos.clone().addScaledVector(up, -0.2 * rf); fov = 40;
   } else if (u < 0.72) {                       // fairing jettison: side-quarter angle to catch the halves splitting
-    camP = pos.clone().addScaledVector(side, 1.8 * LS).addScaledVector(up, 0.7 * LS).addScaledVector(fwd, 0.7 * LS);
-    lookP = pos.clone().addScaledVector(up, 0.1 * LS); fov = 44;
+    camP = pos.clone().addScaledVector(side, 1.8 * rf).addScaledVector(up, 0.7 * rf).addScaledVector(fwd, 0.7 * rf);
+    lookP = pos.clone().addScaledVector(up, 0.1 * rf); fov = 44;
   } else if (u < EV.seco) {                    // ascent to orbit: the climbing stage high over Earth's curving limb
-    camP = pos.clone().addScaledVector(side, 4.4 * LS).addScaledVector(up, 1.4 * LS).addScaledVector(fwd, -2.0 * LS);
-    lookP = pos.clone().addScaledVector(up, -2.5 * LS).addScaledVector(fwd, -2.0 * LS); fov = 54;   // tilt down to Earth below
+    camP = pos.clone().addScaledVector(side, 4.4 * rf).addScaledVector(up, 1.4 * rf).addScaledVector(fwd, -2.0 * rf);
+    lookP = pos.clone().addScaledVector(up, -2.5 * rf).addScaledVector(fwd, -2.0 * rf); fov = 54;   // tilt down to Earth below
   } else {                                     // SECO / orbit: close on the now-coasting stage, sunlit, Earth behind
-    camP = pos.clone().addScaledVector(side, 2.2 * LS).addScaledVector(up, 0.5 * LS).addScaledVector(fwd, -1.2 * LS);
-    lookP = pos.clone().addScaledVector(up, -0.6 * LS).addScaledVector(fwd, -0.2 * LS); fov = 46;
+    camP = pos.clone().addScaledVector(side, 2.2 * rf).addScaledVector(up, 0.5 * rf).addScaledVector(fwd, -1.2 * rf);
+    lookP = pos.clone().addScaledVector(up, -0.6 * rf).addScaledVector(fwd, -0.2 * rf); fov = 46;
   }
   return { pos: camP, look: lookP, fov, up: LAUNCH_N };
 }
