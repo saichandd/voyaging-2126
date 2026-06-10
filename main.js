@@ -1288,6 +1288,24 @@ function buildLaunchPad() {
   g.scale.setScalar(0.19 * LS * RM);
   return g;
 }
+// A lone access road crossing the desert to the pad: a graded dirt shoulder with a darker
+// asphalt lane down the middle and a cleared apron at the pad end. Lies flat on the surface,
+// running along LAUNCH_T1 (the horizon axis the opening looks down). Sized to the rocket scale.
+function buildLaunchRoad() {
+  const s = LS * RM;
+  const g = new THREE.Group();
+  const asphalt = new THREE.MeshStandardMaterial({ color: 0x47443f, roughness: 0.97, metalness: 0.0, envMapIntensity: 0.2, transparent: true, depthWrite: false });
+  const grade = new THREE.MeshStandardMaterial({ color: 0x927a54, roughness: 1.0, metalness: 0.0, envMapIntensity: 0.2, transparent: true, depthWrite: false });
+  const L = 200 * s;
+  const shoulder = new THREE.Mesh(new THREE.PlaneGeometry(1.1 * s, L), grade); shoulder.renderOrder = -0.37; g.add(shoulder);
+  const apron = new THREE.Mesh(new THREE.CircleGeometry(2.2 * s, 28), grade); apron.position.z = 0.00012; apron.renderOrder = -0.36; g.add(apron);
+  const lane = new THREE.Mesh(new THREE.PlaneGeometry(0.5 * s, L), asphalt); lane.position.z = 0.00024; lane.renderOrder = -0.35; g.add(lane);
+  // orient flat: local X -> T2 (width), Y -> T1 (length), Z -> N (up surface normal)
+  g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(LAUNCH_T2, LAUNCH_T1, LAUNCH_N));
+  g.position.copy(PAD).addScaledVector(LAUNCH_N, 0.0011);   // just above the desert field
+  g.userData.mats = [asphalt, grade];
+  return g;
+}
 function buildLaunchSky() {
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide, transparent: true, depthWrite: false, fog: false,
@@ -1964,6 +1982,10 @@ function updateLaunch(u) {
     const fieldFade = clamp01(1 - (u - 0.15) / 0.06);    // solid through the held ground shot, gone as we lift
     voyage.launchField.visible = fieldFade > 0.01;
     voyage.launchField.material.opacity = fieldFade;
+    if (voyage.launchRoad) {                              // the access road fades out with the ground
+      voyage.launchRoad.visible = fieldFade > 0.01;
+      voyage.launchRoad.userData.mats.forEach(m => { m.opacity = fieldFade; });
+    }
   }
   if (voyage.marsSky) voyage.marsSky.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = true;
@@ -2179,6 +2201,7 @@ function updateEDL(u) {
   voyage.lander.visible = false;
   if (voyage.earthGround) voyage.earthGround.visible = false;
   if (voyage.launchField) voyage.launchField.visible = false;
+  if (voyage.launchRoad) voyage.launchRoad.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = false;
   if (voyage.launchSky) voyage.launchSky.visible = false;
   if (voyage.vaporCone) voyage.vaporCone.visible = false;
@@ -2318,6 +2341,7 @@ function updateHelio(ph, u, dt) {
   if (voyage.dust) voyage.dust.visible = false;
   if (voyage.earthGround) voyage.earthGround.visible = false;
   if (voyage.launchField) voyage.launchField.visible = false;
+  if (voyage.launchRoad) voyage.launchRoad.visible = false;
   if (voyage.launchPad) voyage.launchPad.visible = false;
   if (voyage.launchSky) voyage.launchSky.visible = false;
   if (voyage.vaporCone) voyage.vaporCone.visible = false;
@@ -2678,6 +2702,9 @@ function startVoyage() {
     voyage.launchField = buildLaunchField();                         // flat foreground terrain for the opening crane
     voyage.launchField.visible = false;
     scene.add(voyage.launchField);
+    voyage.launchRoad = buildLaunchRoad();                           // access road crossing the desert to the pad
+    voyage.launchRoad.visible = false;
+    scene.add(voyage.launchRoad);
     voyage.launchPad = buildLaunchPad();                             // concrete pad + service gantry
     voyage.launchPad.position.copy(PAD);
     voyage.launchPad.quaternion.setFromUnitVectors(UP, LAUNCH_N);
@@ -2733,6 +2760,7 @@ function endVoyage() {
     if (voyage.ground) voyage.ground.visible = false;
     if (voyage.earthGround) voyage.earthGround.visible = false;
     if (voyage.launchField) voyage.launchField.visible = false;
+  if (voyage.launchRoad) voyage.launchRoad.visible = false;
     if (voyage.launchPad) voyage.launchPad.visible = false;
     if (voyage.launchSky) voyage.launchSky.visible = false;
     if (voyage.vaporCone) voyage.vaporCone.visible = false;
@@ -2771,6 +2799,29 @@ document.getElementById('v-replay').addEventListener('click', () => {
   voyage.t = PHASES[voyage.stage].t0;   // restart the current stage from the top
   voyage.camInit = false;
   setVoyagePlay(true);
+});
+
+// Scrubbable play-head: click or drag anywhere on the progress track to jump to that
+// point in the current stage (use the stage buttons to move between stages).
+const progTrack = document.querySelector('.sim-progress');
+function seekFromEvent(e) {
+  if (!voyage.active) return;
+  const rect = progTrack.getBoundingClientRect();
+  const f = clamp01((e.clientX - rect.left) / rect.width);
+  const ph = PHASES[voyage.stage];
+  voyage.t = ph.t0 + f * ph.dur;
+  voyage.camInit = false;          // snap the camera to the scrubbed moment
+  voyage._lastCallout = -1;        // rebuild the flight-log for the new time
+  vEls['v-progress'].style.width = (f * 100).toFixed(1) + '%';
+}
+progTrack.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  progTrack.setPointerCapture(e.pointerId);
+  seekFromEvent(e);
+  const move = ev => seekFromEvent(ev);
+  const up = () => { progTrack.removeEventListener('pointermove', move); progTrack.removeEventListener('pointerup', up); };
+  progTrack.addEventListener('pointermove', move);
+  progTrack.addEventListener('pointerup', up);
 });
 
 addEventListener('keydown', e => {

@@ -267,17 +267,35 @@ html, body {
 .sim-buttons { display: flex; gap: 8px; }
 .sim-buttons .nav-btn { flex: 1; min-width: 0; }
 .sim-progress {
-  height: 5px;
+  position: relative;
+  height: 9px;
   background: var(--primary-faint);
   border: 1px solid var(--primary-faint);
-  overflow: hidden;
+  overflow: visible;
+  cursor: pointer;
 }
+.sim-progress:hover { border-color: var(--primary); }
 .sim-progress-fill {
+  position: relative;
   height: 100%;
   width: 0%;
   background: linear-gradient(90deg, var(--primary), var(--primary-strong));
   box-shadow: 0 0 8px var(--primary-glow);
-  transition: width 0.1s linear;
+  transition: width 0.08s linear;
+  pointer-events: none;
+}
+/* draggable play-head knob at the fill edge */
+.sim-progress-fill::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: var(--primary-strong);
+  box-shadow: 0 0 8px var(--primary-glow);
 }
 
 .voyage {
