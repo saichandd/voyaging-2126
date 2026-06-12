@@ -1167,12 +1167,16 @@ const EDL = { ENTRY: 0.16, AERO: 0.42, PITCH: 0.55, BURN: 0.62, TOUCH: 0.965 };
 // brakes onto a high parking orbit this far from Mars's center and the shuttle flies
 // the final drop alone (matches the ORBIT INSERTION callout + the EDL undock).
 const PARK_D = 6.0;
+// Colony model scale: drop this to make the settlement read smaller against the planet
+// (the landing-pad offsets and surface cameras all derive from it).
+const BASE_S = 0.24;
 // EDL ground track: the station parks uprange of the colony so the whole descent moves
 // monotonically downrange — undock, arc through entry, and settle on a pad just beside
-// the base. Pad offsets (tang/cross from the colony center) picked on open ground,
-// clear of the solar farm and parked ships. The pad's own surface normal (dirPad in
-// updateEDL) is the true descent axis so the shuttle settles ON the curved ground.
-const EDL_LAT0 = -3.0, EDL_PAD_T = 0.1, EDL_PAD_C = 0.55;
+// the base. Pad offsets (tang/cross from the colony center, derived from the pad's
+// local position in buildMarsBase) sit on open ground clear of the solar farm and
+// parked ships. The pad's own surface normal (dirPad in updateEDL) is the true descent
+// axis so the shuttle settles ON the curved ground.
+const EDL_LAT0 = -3.0, EDL_PAD_T = 0.2 * BASE_S, EDL_PAD_C = 1.1 * BASE_S;
 const sstep = (x, a, b) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 
 function earthGroundTexture(s = 1024) {
@@ -1703,7 +1707,7 @@ function buildMarsBase() {
 
   // --- Layout ---------------------------------------------------------------
   // The crew landing pad — at the exact spot the EDL shuttle sets down
-  // (world tang 0.1 / cross 0.55 from the colony centre = local (-0.81, -0.77)).
+  // (local (-0.81, -0.77) maps to world tang 0.2*BASE_S / cross 1.1*BASE_S = EDL_PAD_T/C).
   const PAD_L = [-0.81, -0.77];
   {
     const p = new THREE.Group(); p.position.set(PAD_L[0], 0, PAD_L[1]);
@@ -1847,7 +1851,7 @@ function buildMarsBase() {
   // The colony spans ±1.1 local on a globe only 2.64 local-units in radius, so a flat
   // layout leaves the rim floating ~0.25 in the air. Drop every ground-anchored child
   // onto the sphere and tilt it to its own local normal.
-  const Rloc = planetMeshes.mars.config.size / 0.5;
+  const Rloc = planetMeshes.mars.config.size / BASE_S;
   g.children.forEach(c => {
     if (c.isLight) return;
     const d2 = c.position.x * c.position.x + c.position.z * c.position.z;
@@ -1858,7 +1862,7 @@ function buildMarsBase() {
   });
 
   g.userData = { glowMats, flag, blinkMats };
-  g.scale.setScalar(0.5);
+  g.scale.setScalar(BASE_S);
   return g;
 }
 
@@ -2062,11 +2066,12 @@ function viewTarget(view, st, s, u = 0) {
     const t2 = new THREE.Vector3().crossVectors(t1, BASE_N).normalize();
     const arc = Math.sin(u * Math.PI);                               // 0 at the ends, 1 mid-stage
     const ang = (u - 0.5) * 1.4 + Math.sin(elapsed * 0.1) * 0.06;    // quarter-turn orbit + live drift
-    const height = 0.8 + arc * 2.6;                                  // low → high survey → low
-    const dist = 1.7 + (1 - arc) * 0.6;
+    const sF = BASE_S * 2;                                           // camera rig rides the colony scale
+    const height = (0.8 + arc * 2.6) * sF;                           // low → high survey → low
+    const dist = (1.7 + (1 - arc) * 0.6) * sF;
     const radial = t1.clone().multiplyScalar(-dist).applyAxisAngle(BASE_N, ang);
-    const pos = B.clone().addScaledVector(BASE_N, height).add(radial).addScaledVector(t2, 1.0 - arc * 0.5);
-    const look = B.clone().addScaledVector(BASE_N, 0.16 + arc * 0.5).addScaledVector(t1, 0.15);
+    const pos = B.clone().addScaledVector(BASE_N, height).add(radial).addScaledVector(t2, (1.0 - arc * 0.5) * sF);
+    const look = B.clone().addScaledVector(BASE_N, (0.16 + arc * 0.5) * sF).addScaledVector(t1, 0.15 * sF);
     return { pos, look, fov: 44, up: BASE_N };
   }
   const mars = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(mars);
