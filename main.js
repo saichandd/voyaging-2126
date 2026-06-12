@@ -1910,30 +1910,31 @@ function viewTarget(view, st, s, u = 0) {
     const toMars = mars.clone().sub(ship).normalize();
     const sideM = new THREE.Vector3().crossVectors(toMars, up).normalize();
     if (sideM.lengthSq() < 1e-4) sideM.set(1, 0, 0);
-    const pos = ship.clone().addScaledVector(toMars, -1.6).addScaledVector(up, 0.9).addScaledVector(sideM, 2.6);
-    return { pos, look: ship.clone().addScaledVector(toMars, 0.6), fov: 46 };
+    const pos = ship.clone().addScaledVector(toMars, -6.0 * MS).addScaledVector(up, 1.6 * MS).addScaledVector(sideM, 2.2 * MS);
+    return { pos, look: ship.clone().addScaledVector(toMars, 0.8 * MS), fov: 46 };
   }
   if (view === 'ring') { return { pos: ship.clone().addScaledVector(side, 2.3).addScaledVector(up, 0.85).addScaledVector(vel, 0.7), look: ship.clone() }; }
   if (view === 'endurance') {
     // Look mostly down the travel axis from ahead-and-above so the spinning ring
     // reads face-on, with the docked shuttle in the foreground and deep space behind.
-    return { pos: ship.clone().addScaledVector(vel, 7.0).addScaledVector(up, 3.0).addScaledVector(side, 2.2), look: ship.clone().addScaledVector(vel, 1.0) };
+    // Offsets ride the MS model scale so the (10x-shrunk) station fills the frame.
+    return { pos: ship.clone().addScaledVector(vel, 5.5 * MS).addScaledVector(up, 2.2 * MS).addScaledVector(side, 1.8 * MS), look: ship.clone().addScaledVector(vel, 0.5 * MS), fov: 46 };
   }
   if (view === 'dock') {
     // Close on the docking interface as the shuttle closes in on the Endurance's nose,
     // with a slow orbital drift so the shot breathes.
-    const d = ship.clone().addScaledVector(vel, 1.3);
-    const off = side.clone().multiplyScalar(3.0).applyAxisAngle(up, elapsed * 0.06);
-    return { pos: d.clone().add(off).addScaledVector(up, 1.2).addScaledVector(vel, -1.2), look: d, fov: 40 };
+    const d = ship.clone().addScaledVector(vel, 1.5 * MS);
+    const off = side.clone().multiplyScalar(7.0 * MS).applyAxisAngle(up, elapsed * 0.06);
+    return { pos: d.clone().add(off).addScaledVector(up, 2.6 * MS).addScaledVector(vel, -3.0 * MS), look: d, fov: 42 };
   }
   if (view === 'coast') {
     // Look back down the track toward the Sun and the shrinking inner system — Earth a
     // blue point near the glare — with the Endurance silhouetted in the foreground.
     const out = ship.clone().normalize();                                  // Sun -> ship, pointing outward
-    const off = side.clone().multiplyScalar(2.6).applyAxisAngle(up, elapsed * 0.04);
-    return { pos: ship.clone().addScaledVector(out, 7.0).addScaledVector(up, 2.4).add(off), look: ship.clone(), fov: 42 };
+    const off = side.clone().multiplyScalar(2.4 * MS).applyAxisAngle(up, elapsed * 0.04);
+    return { pos: ship.clone().addScaledVector(out, 6.0 * MS).addScaledVector(up, 2.0 * MS).add(off), look: ship.clone(), fov: 42 };
   }
-  if (view === 'chase') { return { pos: ship.clone().addScaledVector(vel, -10).addScaledVector(side, 2.2).addScaledVector(up, 4.5), look: ship.clone().addScaledVector(vel, 4) }; }
+  if (view === 'chase') { return { pos: ship.clone().addScaledVector(vel, -7 * MS).addScaledVector(side, 2.5 * MS).addScaledVector(up, 3 * MS), look: ship.clone().addScaledVector(vel, 2 * MS), fov: 48 }; }
   if (view === 'depart') {
     // Side-on staging shot: the separation axis runs across the frame — liner on
     // one side, the spent stage tumbling away on the other, frost shower between.
