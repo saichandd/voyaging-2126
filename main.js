@@ -1978,10 +1978,13 @@ let _acc = 0;
 PHASES.forEach(p => { p.t0 = _acc; _acc += p.dur; p.t1 = _acc; });
 const TOTAL_DUR = _acc;
 
+const ZERO_V = new THREE.Vector3();
 const voyage = {
   active: false, playing: false, t: 0, total: TOTAL_DUR, stage: 0, lastStage: -1,
   manualView: null, ship: null, rocket: null, ellipseFull: null, ellipseTrail: null,
+  // camPos/camLook are smoothed OFFSETS from camAnchor (the tracked subject), not world points.
   camPos: new THREE.Vector3(), camLook: new THREE.Vector3(), camUp: new THREE.Vector3(0, 1, 0), camInit: false,
+  camAnchor: new THREE.Vector3(), camAnchorKey: 'world',
   lastHighlight: null,
 };
 
@@ -2719,12 +2722,14 @@ function updateVoyage(dt) {
   const u = clamp01((voyage.t - ph.t0) / ph.dur);
   vEls['v-progress'].style.width = (u * 100).toFixed(1) + '%';  // per-stage progress
   sunGroup.visible = ph.mode !== 'launch';   // the stylized sun disc reads as a portal in the up-looking pad view
-  let cam;
+  let cam, camAnchor = null, camAnchorKey = 'world';
   if (ph.mode === 'launch') {
     cam = updateLaunch(u);
+    camAnchor = voyage.rocket.position; camAnchorKey = 'rocket';
     updateTelemetry(ph, u, null);
   } else if (ph.mode === 'edl') {
     cam = updateEDL(u);
+    camAnchor = voyage.ship.position; camAnchorKey = 'shuttle';
     updateTelemetry(ph, u, 0.94 + u * 0.06);
   } else {
     const { s, st } = updateHelio(ph, u, dt);
@@ -2737,6 +2742,9 @@ function updateVoyage(dt) {
     }
     if (ph.key === 'approach') view = u < 0.82 ? 'approach' : 'arrival';
     cam = viewTarget(view, st, s, u);
+    // Ship-centric shots track the craft as it flies the transfer; the fixed map
+    // and surface views smooth in world space instead.
+    if (view !== 'map' && view !== 'surface') { camAnchor = st.pos; camAnchorKey = 'ship'; }
   }
   // Aim the directional sun + shadow frustum at the current subject each frame so the
   // craft are lit from the same direction as the planet shaders (sun at the origin).
@@ -2755,8 +2763,24 @@ function updateVoyage(dt) {
   // Per-stage focal length (stages may return a `fov`): snap on seek, ease while playing.
   const targetFov = cam.fov || 55;
   const targetUp = cam.up || UP;   // local "up" so launch/surface read level instead of tilted
-  if (!voyage.camInit) { voyage.camPos.copy(cam.pos); voyage.camLook.copy(cam.look); voyage.camUp.copy(targetUp); voyage.camInit = true; camera.fov = targetFov; camera.updateProjectionMatrix(); }
-  else if (Math.abs(camera.fov - targetFov) > 0.01) { camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-dt * 3)); camera.updateProjectionMatrix(); }
+  // Smooth the camera RELATIVE to the moving subject (anchor): beat-to-beat moves still
+  // glide, but the anchor's own motion is followed exactly. Smoothing in absolute space
+  // made tight shots trail whole frame-widths behind the craft flying the transfer.
+  const anc = camAnchor || ZERO_V;
+  const relPos = cam.pos.clone().sub(anc), relLook = cam.look.clone().sub(anc);
+  if (!voyage.camInit) {
+    voyage.camPos.copy(relPos); voyage.camLook.copy(relLook); voyage.camUp.copy(targetUp);
+    voyage.camAnchor.copy(anc); voyage.camAnchorKey = camAnchorKey;
+    voyage.camInit = true; camera.fov = targetFov; camera.updateProjectionMatrix();
+  } else if (Math.abs(camera.fov - targetFov) > 0.01) { camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-dt * 3)); camera.updateProjectionMatrix(); }
+  if (voyage.camAnchorKey !== camAnchorKey) {
+    // The subject changed (e.g. chase → map): rebase the stored offsets onto the new
+    // anchor so the camera's absolute pose carries over and glides, not teleports.
+    voyage.camPos.add(voyage.camAnchor).sub(anc);
+    voyage.camLook.add(voyage.camAnchor).sub(anc);
+    voyage.camAnchorKey = camAnchorKey;
+  }
+  voyage.camAnchor.copy(anc);
   const k = 1 - Math.exp(-dt * 2.4);
   voyage.camPos.lerp(relPos, k);
   voyage.camLook.lerp(relLook, k);
@@ -2767,6 +2791,7 @@ function updateVoyage(dt) {
   // Cinematic shake: liftoff rumble + max-Q buffet + touchdown jolt. Applied here,
   // after the position smoothing, so the high-frequency vibration isn't damped away.
   const shakeAmp = stageShake(ph, u);
+  _shLook.copy(anc).add(voyage.camLook);                 // smoothed look, back in world space
   if (shakeAmp > 1e-4) {
     const tt = voyage.t;
     _shFwd.subVectors(voyage.camLook, voyage.camPos).normalize();
@@ -2777,6 +2802,7 @@ function updateVoyage(dt) {
     camera.position.addScaledVector(_shRight, jx).addScaledVector(_shUp, jy);
     _shLook.addScaledVector(_shRight, -jx * 0.4).addScaledVector(_shUp, -jy * 0.4);
   }
+  camera.lookAt(_shLook);
 }
 
 // Camera shake amplitude (world units) by stage moment: rocket rumble at ignition,
@@ -2811,7 +2837,6 @@ function startVoyage() {
   voyage.t = 0;
   voyage.stage = 0;
   voyage.lastStage = -1;
-  camera.lookAt(_shLook);
   voyage.manualView = null;
   voyage.lastHighlight = null;
   voyage.camInit = false;
