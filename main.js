@@ -2386,9 +2386,13 @@ function updateEDL(u) {
     const lat = EDL_LAT0 * (1 - drift);
     return M.clone().addScaledVector(axis, mR + a + REST).addScaledVector(tang, lat);
   };
-  const pos = posAt(u);
+  // The stage opens with the shuttle ON the dock (same nose offset cruise uses), easing
+  // onto the descent trajectory over the first beats — a true visible separation.
+  const dock = voyage.station.position.clone().addScaledVector(tang, 1.5 * MS);
+  const shipAt = (uu) => dock.clone().lerp(posAt(uu), sstep(uu, 0.0, 0.10));
+  const pos = shipAt(u);
   const alt = pos.distanceTo(M) - mR - REST;              // height of the legs above the pad
-  const velDir = posAt(Math.min(1, u + 0.01)).sub(pos);
+  const velDir = shipAt(Math.min(1, u + 0.01)).sub(pos);
   if (velDir.lengthSq() < 1e-9) velDir.copy(dirPad).negate(); else velDir.normalize();
   voyage.ship.position.copy(pos);
 
