@@ -1904,11 +1904,11 @@ function buildMarsGround() {
 
 // Journey timeline: ordered stages, each with a real-time duration.
 // Stages follow NASA's Mars mission timeline: Launch → Cruise → Approach →
-// Entry, Descent & Landing → Surface Operations. Durations sum to ~120s.
-// Text/facts are short, informal prompts — meant to be narrated over live.
+// Entry, Descent & Landing → Surface Operations. Durations sum to 420s (7:00),
+// sized so each stage's notes narrate comfortably (~70 words/min over them).
 const PHASES = [
   {
-    key: 'launch', label: '01 · LAUNCH', short: 'LAUNCH', dur: 84, mode: 'launch',
+    key: 'launch', label: '01 · LAUNCH', short: 'LAUNCH', dur: 75, mode: 'launch',
     tag: 'STAGE 01 · LAUNCH',
     // The traveller's log: all notes for the stage shown together, simple and fun —
     // meant to be narrated over live.
@@ -1923,7 +1923,7 @@ const PHASES = [
     ]
   },
   {
-    key: 'cruise', label: '02 · CRUISE', short: 'CRUISE', dur: 140, mode: 'helio', s0: 0.03, s1: 0.78, view: 'endurance',
+    key: 'cruise', label: '02 · CRUISE', short: 'CRUISE', dur: 145, mode: 'helio', s0: 0.03, s1: 0.78, view: 'endurance',
     tag: 'STAGE 02 · CRUISE',
     facts: [
       'dock with the mothership. it has been waiting in orbit we put it in.',
@@ -1940,7 +1940,7 @@ const PHASES = [
     ]
   },
   {
-    key: 'approach', label: '03 · APPROACH', short: 'APPROACH', dur: 70, mode: 'helio', s0: 0.78, s1: 0.94, view: 'approach',
+    key: 'approach', label: '03 · APPROACH', short: 'APPROACH', dur: 60, mode: 'helio', s0: 0.78, s1: 0.94, view: 'approach',
     tag: 'STAGE 03 · APPROACH',
     facts: [
       'within these 6 months, Mars grows from a dot, to a red coin, to a new planet.',
@@ -1951,7 +1951,7 @@ const PHASES = [
     ]
   },
   {
-    key: 'edl', label: '04 · DESCENT & LANDING', short: 'DESCENT & LANDING', dur: 80, mode: 'edl', s0: 0.94, s1: 1.0,
+    key: 'edl', label: '04 · DESCENT & LANDING', short: 'DESCENT & LANDING', dur: 70, mode: 'edl', s0: 0.94, s1: 1.0,
     tag: 'STAGE 04 · DESCENT & LANDING',
     facts: [
       'the shuttle pops off the mothership and we just drop.',
@@ -1963,7 +1963,7 @@ const PHASES = [
     ]
   },
   {
-    key: 'surface', label: '05 · SURFACE OPERATIONS', short: 'SURFACE OPS', dur: 45, mode: 'helio', s0: 1.0, s1: 1.0, view: 'surface',
+    key: 'surface', label: '05 · SURFACE OPERATIONS', short: 'SURFACE OPS', dur: 70, mode: 'helio', s0: 1.0, s1: 1.0, view: 'surface',
     tag: 'STAGE 05 · SURFACE OPERATIONS',
     facts: [
       'And youre on mars. you weigh a third of what you did at home. but after months floating, standing is hard. legs are gonna feel like jelly',
