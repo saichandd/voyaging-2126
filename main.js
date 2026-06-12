@@ -1162,64 +1162,6 @@ const LAUNCH_MAXALT = 3.5 * LS, LAUNCH_RANGE = 3.5 * LS, ROCKET_BASE = 0.5 * LS 
 // Shared launch + EDL event timelines (progress u in [0,1]) so motion, plume, camera
 // and telemetry stay in sync.
 const EV = { hold: 0.025, tower: 0.06, roll: 0.09, pitch: 0.15, maxQ: 0.25, meco: 0.46, sep: 0.49, ign2: 0.54, fairing: 0.63, tilt: 0.80, seco: 0.96 };
-// Launch broadcast callouts, surfaced one at a time as the flight passes each event —
-// the running flight log a narrator reads over (status drives the ENGINE field separately).
-const LAUNCH_CALLOUTS = [
-  { at: 0.00, tag: 'IGNITION', text: 'Ignition sequence start — engines building to full thrust against the hold-downs.' },
-  { at: 0.025, tag: 'LIFTOFF', text: 'Liftoff! Clearing the pad under 3–4 g — three to four times your own weight.' },
-  { at: 0.06, tag: 'TOWER CLEAR', text: 'Tower cleared. Rolling the vehicle onto its flight azimuth toward orbit.' },
-  { at: 0.15, tag: 'PITCH OVER', text: 'Pitch program — the rocket leans downrange and the gravity turn begins.' },
-  { at: 0.25, tag: 'MAX-Q', text: 'Max-Q — peak aerodynamic pressure. Engines throttle down through the stress.' },
-  { at: 0.34, tag: 'THROTTLE UP', text: 'Through the thick air — throttling back up, accelerating hard now.' },
-  { at: 0.46, tag: 'MECO', text: 'MECO — main engine cutoff. The first stage has done its job.' },
-  { at: 0.49, tag: 'STAGE SEP', text: 'Stage separation — the booster falls away to fly itself home and be reused.' },
-  { at: 0.54, tag: 'SES-1', text: 'Second-stage ignition — a single vacuum engine lights to push on to orbit.' },
-  { at: 0.63, tag: 'FAIRING SEP', text: 'Fairing jettison — the nose cone splits away; the air is too thin to matter.' },
-  { at: 0.80, tag: 'ASCENT', text: 'Above 200 km, building toward 28,000 km/h — nearly orbital velocity.' },
-  { at: 0.96, tag: 'SECO · ORBIT', text: 'SECO — engines off. The push is over. You are weightless, in orbit.' },
-];
-// Cruise flight-log: the eight-month coast to Mars, surfaced as the journey unfolds.
-const CRUISE_CALLOUTS = [
-  { at: 0.00, tag: 'RENDEZVOUS', text: 'Closing on the Endurance — the interplanetary mothership already waiting in orbit.' },
-  { at: 0.09, tag: 'DOCKED', text: 'Soft capture, hard dock. The crew transfers aboard for the long ride to Mars.' },
-  { at: 0.20, tag: 'SPIN-UP', text: 'The habitat ring spins up — centrifugal force stands in for gravity so muscles and bone hold.' },
-  { at: 0.34, tag: 'LIFE ABOARD', text: 'Frozen and dried food; all water — even urine — recycled. A game area to pass the months.' },
-  { at: 0.46, tag: 'TRANS-MARS', text: 'Engines off. We coast a Hohmann transfer — a free-fall arc around the Sun, eight months long.' },
-  { at: 0.60, tag: 'DEEP SPACE', text: 'Earth is a blue point behind us now; some 480 million km of emptiness lie ahead.' },
-  { at: 0.72, tag: 'COMMS LAG', text: 'A call home already takes minutes each way — and grows longer with every passing day.' },
-  { at: 0.84, tag: 'KEPLER II', text: "Watch the speed bleed off as we climb away from the Sun — Kepler's 2nd law, made visible." },
-  { at: 0.93, tag: 'MARS AHEAD', text: 'Mars brightens from a star into a disc dead ahead. Arrival is near.' },
-];
-// Approach flight-log: the final closing on Mars, from rust-red star to a world below.
-const APPROACH_CALLOUTS = [
-  { at: 0.00, tag: 'MARS IN SIGHT', text: 'Mars dead ahead — a rust-red star, brightening by the day after eight months.' },
-  { at: 0.22, tag: 'RESOLVING', text: 'It swells from a point into a disc; polar caps and dark plains resolve out of the glare.' },
-  { at: 0.42, tag: 'FINAL APPROACH', text: 'Closing fast. The lag to Earth has stretched past twenty minutes each way — we are on our own.' },
-  { at: 0.60, tag: 'ORBIT INSERTION', text: 'Capture burn — the Endurance brakes into a parking orbit around Mars.' },
-  { at: 0.78, tag: 'PARKING ORBIT', text: 'In orbit at last. The red world fills the windows; the landing shuttle is powered up.' },
-  { at: 0.90, tag: 'UNDOCK PREP', text: 'The crew boards the shuttle. Final checks before separating for the descent.' },
-];
-// Descent & Landing flight-log: from undock in orbit to dust-settling touchdown.
-const EDL_CALLOUTS = [
-  { at: 0.00, tag: 'UNDOCK', text: 'Separation — the shuttle releases from the Endurance and drops away toward the surface.' },
-  { at: 0.07, tag: 'DEORBIT', text: 'Deorbit burn — committing to the descent. There is no turning back now.' },
-  { at: 0.16, tag: 'ENTRY INTERFACE', text: 'Entry interface — meeting the thin Martian air at thousands of kilometres an hour.' },
-  { at: 0.24, tag: 'PEAK HEATING', text: 'Peak heating — a sheath of plasma wraps the heat shield, glowing orange.' },
-  { at: 0.34, tag: 'AEROBRAKE', text: 'The atmosphere does the braking — far thinner than Earth’s, but enough to bleed speed.' },
-  { at: 0.52, tag: 'PITCH UP', text: 'Pitching upright, engines swinging down for the powered descent.' },
-  { at: 0.66, tag: 'RETRO BURN', text: 'Retro burn — the engines light to kill the last of the velocity.' },
-  { at: 0.85, tag: 'FINAL DESCENT', text: 'Throttling down, feeling for the ground. Landing legs deployed.' },
-  { at: 0.97, tag: 'TOUCHDOWN', text: 'Touchdown on Mars. The dust settles. After eight months — you have arrived.' },
-];
-// Surface Operations flight-log: a tour of the colony you've travelled 480 million km to reach.
-const SURFACE_CALLOUTS = [
-  { at: 0.00, tag: 'BOOTS ON MARS', text: 'Boots on Mars. The shuttle stands on the red plain beside the colony.' },
-  { at: 0.16, tag: 'THE COLONY', text: 'Pressurized domes, habitat modules, and the first Starships that came before — home now.' },
-  { at: 0.34, tag: 'POWER & AIR', text: 'Solar arrays drink the weak Martian sun; inside, the air is kept at a comfortable 18°C.' },
-  { at: 0.52, tag: 'LOW GRAVITY', text: 'Gravity is just 38% of Earth’s — yet after months in near-zero g, many can barely stand.' },
-  { at: 0.70, tag: 'THE FRONTIER', text: 'Water ice mined from below, oxygen split from the thin air — a foothold on another world.' },
-  { at: 0.87, tag: 'WELCOME', text: 'Welcome to Mars. The journey that began on a launch pad ends here, 480 million km from home.' },
-];
 const EDL = { ENTRY: 0.16, AERO: 0.42, PITCH: 0.55, BURN: 0.62, TOUCH: 0.965 };
 // The Endurance never lands: the transfer would carry it right down to Mars, so it
 // brakes onto a high parking orbit this far from Mars's center and the shuttle flies
@@ -1964,47 +1906,67 @@ const PHASES = [
   {
     key: 'launch', label: '01 · LAUNCH', short: 'LAUNCH', dur: 84, mode: 'launch',
     tag: 'STAGE 01 · LAUNCH',
-    // Progressive callouts, revealed in sync with the flight events (see LAUNCH_CALLOUTS).
+    // The traveller's log: all notes for the stage shown together, simple and fun —
+    // meant to be narrated over live.
     facts: [
-      'Ignition — the engines light and build to full thrust before release.',
-      'Liftoff. 3–4 g, three to four times your own weight.',
-      '~9 minutes of burning to reach 28,000 km/h, then weightless in orbit.',
+      'the rocket is basically a 20-story fuel tank with seats on top.',
+      'liftoff feels like 3 people sitting on your chest. for 9 minutes.',
+      'going UP is the easy part — going FAST sideways is what gets you to orbit.',
+      'this ride only exists every 26 months, when Earth and Mars line up. miss it and you wait.',
+      'halfway up, the first stage falls off and flies itself home to be reused.',
+      'engines off — and just like that, you float. everything floats.',
+      'your stomach arrives in orbit a few seconds after the rest of you.',
     ]
   },
   {
     key: 'cruise', label: '02 · CRUISE', short: 'CRUISE', dur: 140, mode: 'helio', s0: 0.03, s1: 0.78, view: 'endurance',
     tag: 'STAGE 02 · CRUISE',
     facts: [
-      'dock with the interplanetary mothership. already placed.',
-      'comfortable travel as the ring spins giving gravity from centrifugal force.',
-      'frozen, dried food. all water, even urine, is recycled. game area.',
-      '8-month coast.',
+      'dock with the mothership. it has been waiting in orbit — too big to ever land.',
+      'the big ring spins so the floor pushes up on your feet. instant fake gravity.',
+      'engines OFF for 8 months. the sun does the steering for free — we just coast.',
+      'gym is mandatory. 2 hours a day or your bones get weak. no refunds.',
+      'all water on board is recycled. yes, even that. cleaner than what you drink at home.',
+      'frozen and dried food. friday is movie night — the popcorn floats if you leave the ring.',
+      'day 60: Earth is just a pale blue dot out the window. kinda emotional ngl.',
+      'we slow down the further we get from the sun — it is all uphill from here.',
     ]
   },
   {
     key: 'approach', label: '03 · APPROACH', short: 'APPROACH', dur: 70, mode: 'helio', s0: 0.78, s1: 0.94, view: 'approach',
     tag: 'STAGE 03 · APPROACH',
     facts: [
-      'Mars grows from a dot into a disc over the final weeks',
-      'any communication to earth is gonna take about 15min to reach at this distance',
+      'after 8 months Mars grows from a dot, to a coin, to a planet. everyone is at the windows.',
+      'a call home now takes 15 minutes to arrive. arguments with mission control take forever.',
+      'Mars has two tiny potato-shaped moons. one is slowly falling and will become a ring someday.',
+      'big brake burn — the mothership parks high above Mars. this is as close as it ever gets.',
+      'everyone packs into the shuttle. the descent crew look way too relaxed.',
     ]
   },
   {
     key: 'edl', label: '04 · DESCENT & LANDING', short: 'DESCENT & LANDING', dur: 80, mode: 'edl', s0: 0.94, s1: 1.0,
     tag: 'STAGE 04 · DESCENT & LANDING',
     facts: [
-      'shuttle undocks from the Mothership.',
-      'just a smooth descent much easier than the take off because of low gravity.',
-      'the weather at in the US Colony is maintained at a nice 18 celcius.'
+      'the shuttle pops off the mothership and just... drops.',
+      'mars air is super thin, but at this speed it still burns like a meteor. enjoy the orange glow.',
+      'the air does most of the braking for free. the engines handle the last bit.',
+      'no parachutes — too heavy for that here. we land on the engines, like the rockets back home.',
+      'flip upright, legs out, ride the flame down. way easier than takeoff thanks to the low gravity.',
+      'the landing pads were poured by robots two years before any person arrived.',
+      'touchdown. dust everywhere. 480 million km, door to door.',
     ]
   },
   {
     key: 'surface', label: '05 · SURFACE OPERATIONS', short: 'SURFACE OPS', dur: 45, mode: 'helio', s0: 1.0, s1: 1.0, view: 'surface',
     tag: 'STAGE 05 · SURFACE OPERATIONS',
     facts: [
-      'journey would not be complete in 8.5 months and ~480 million km after launch.',
-      'gravity is only 38% g, but after months of very low gravity, many can’t stand.',
-      'please purchase the tickets from spacexyz.com'
+      'welcome to Mars. you weigh a third of what you did at home — but after months floating, standing is hard.',
+      'inside the colony it is a comfy 18°C. outside it is -60 and the air is unbreathable. stay inside.',
+      'the greenhouse grows real salad. it is the most popular building — people miss green.',
+      'water comes from ice mined underground, oxygen is made from the air. nothing is wasted.',
+      'sunsets here are blue. not kidding. the dust flips the colors around.',
+      'the return window opens in 15 months. the planets set the schedule, not us.',
+      'please purchase the tickets from spacexyz.com',
     ]
   },
 ];
@@ -2677,7 +2639,6 @@ function updateTelemetry(ph, u, s) {
     vEls['v-phase'].textContent = ph.short;
     vEls['vc-tag'].textContent = ph.tag;
     vEls['v-notes'].innerHTML = ph.facts.map(f => `<div class="note">› ${f}</div>`).join('');
-    voyage._lastCallout = -1;   // force the launch flight-log to rebuild on (re)entry
     highlightStage();
   }
   if (ph.mode === 'launch') {
@@ -2693,16 +2654,6 @@ function updateTelemetry(ph, u, s) {
       : u >= EV.ign2 ? '● SES-1' : u >= EV.maxQ && u < 0.34 ? '▼ THROTTLE' : '● BURN';
     vEls['v-engine'].textContent = status;
     vEls['v-engine'].className = (coast || u >= EV.seco) ? '' : 'warn';
-    // Progressive flight log: reveal callouts as each event passes, newest highlighted.
-    let ci = 0; for (let i = 0; i < LAUNCH_CALLOUTS.length; i++) if (u >= LAUNCH_CALLOUTS[i].at) ci = i;
-    if (ci !== voyage._lastCallout) {
-      voyage._lastCallout = ci;
-      const start = Math.max(0, ci - 3);
-      vEls['v-notes'].innerHTML = LAUNCH_CALLOUTS.slice(start, ci + 1).map((c, k) => {
-        const cur = (start + k) === ci;
-        return `<div class="note"${cur ? ' style="opacity:1"' : ' style="opacity:0.5"'}>› <b>${c.tag}.</b> ${c.text}</div>`;
-      }).join('');
-    }
   } else if (ph.mode === 'edl') {
     const a = Math.max(0, voyage.edlAlt ?? 4.7), a0 = voyage.edlStartAlt || 4.7;
     vEls['v-elapsed'].textContent = `ALT ${Math.round(a / a0 * 125)} KM`;
@@ -2713,16 +2664,6 @@ function updateTelemetry(ph, u, s) {
     vEls['v-engine'].textContent = u > EDL.TOUCH ? '○ DOWN' : retro ? '● RETRO' : plasma ? '▲ PLASMA'
       : deorb ? '● DEORBIT' : u < 0.07 ? '○ UNDOCK' : u < EDL.ENTRY ? '○ FREE-FALL' : '○ AEROBRAKE';
     vEls['v-engine'].className = (retro || plasma || deorb) ? 'warn' : '';
-    // Progressive descent flight-log: reveal callouts as each EDL phase passes.
-    let ci = 0; for (let i = 0; i < EDL_CALLOUTS.length; i++) if (u >= EDL_CALLOUTS[i].at) ci = i;
-    if (ci !== voyage._lastCallout) {
-      voyage._lastCallout = ci;
-      const start = Math.max(0, ci - 3);
-      vEls['v-notes'].innerHTML = EDL_CALLOUTS.slice(start, ci + 1).map((c, k) => {
-        const cur = (start + k) === ci;
-        return `<div class="note"${cur ? ' style="opacity:1"' : ' style="opacity:0.5"'}>› <b>${c.tag}.</b> ${c.text}</div>`;
-      }).join('');
-    }
   } else {
     const st = voyageStats(s);
     if (ph.key === 'surface') {
@@ -2741,20 +2682,6 @@ function updateTelemetry(ph, u, s) {
       else if (ph.burn) { eng = '● BURN'; warn = true; }
       vEls['v-engine'].textContent = eng;
       vEls['v-engine'].className = warn ? 'warn' : '';
-    }
-    // Progressive flight-log for the coast, approach and surface tour.
-    const callouts = ph.key === 'cruise' ? CRUISE_CALLOUTS : ph.key === 'approach' ? APPROACH_CALLOUTS
-      : ph.key === 'surface' ? SURFACE_CALLOUTS : null;
-    if (callouts) {
-      let ci = 0; for (let i = 0; i < callouts.length; i++) if (u >= callouts[i].at) ci = i;
-      if (ci !== voyage._lastCallout) {
-        voyage._lastCallout = ci;
-        const start = Math.max(0, ci - 3);
-        vEls['v-notes'].innerHTML = callouts.slice(start, ci + 1).map((c, k) => {
-          const cur = (start + k) === ci;
-          return `<div class="note"${cur ? ' style="opacity:1"' : ' style="opacity:0.5"'}>› <b>${c.tag}.</b> ${c.text}</div>`;
-        }).join('');
-      }
     }
   }
 }
@@ -2822,11 +2749,11 @@ function updateVoyage(dt) {
   if (!voyage.camInit) { voyage.camPos.copy(cam.pos); voyage.camLook.copy(cam.look); voyage.camUp.copy(targetUp); voyage.camInit = true; camera.fov = targetFov; camera.updateProjectionMatrix(); }
   else if (Math.abs(camera.fov - targetFov) > 0.01) { camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-dt * 3)); camera.updateProjectionMatrix(); }
   const k = 1 - Math.exp(-dt * 2.4);
-  voyage.camPos.lerp(cam.pos, k);
-  voyage.camLook.lerp(cam.look, k);
+  voyage.camPos.lerp(relPos, k);
+  voyage.camLook.lerp(relLook, k);
   voyage.camUp.lerp(targetUp, k);
   if (voyage.camUp.lengthSq() > 1e-6) voyage.camUp.normalize();
-  camera.position.copy(voyage.camPos);
+  camera.position.copy(anc).add(voyage.camPos);
   camera.up.copy(voyage.camUp);
   // Cinematic shake: liftoff rumble + max-Q buffet + touchdown jolt. Applied here,
   // after the position smoothing, so the high-frequency vibration isn't damped away.
@@ -2839,10 +2766,7 @@ function updateVoyage(dt) {
     const jx = (Math.sin(tt * 47.0) + 0.7 * Math.sin(tt * 31.3 + 1.1)) * shakeAmp;
     const jy = (Math.sin(tt * 43.0 + 1.3) + 0.7 * Math.sin(tt * 27.7 + 0.6)) * shakeAmp;
     camera.position.addScaledVector(_shRight, jx).addScaledVector(_shUp, jy);
-    _shLook.copy(voyage.camLook).addScaledVector(_shRight, -jx * 0.4).addScaledVector(_shUp, -jy * 0.4);
-    camera.lookAt(_shLook);
-  } else {
-    camera.lookAt(voyage.camLook);
+    _shLook.addScaledVector(_shRight, -jx * 0.4).addScaledVector(_shUp, -jy * 0.4);
   }
 }
 
@@ -2878,6 +2802,7 @@ function startVoyage() {
   voyage.t = 0;
   voyage.stage = 0;
   voyage.lastStage = -1;
+  camera.lookAt(_shLook);
   voyage.manualView = null;
   voyage.lastHighlight = null;
   voyage.camInit = false;
@@ -3051,7 +2976,6 @@ function seekFromEvent(e) {
   const ph = PHASES[voyage.stage];
   voyage.t = ph.t0 + f * ph.dur;
   voyage.camInit = false;          // snap the camera to the scrubbed moment
-  voyage._lastCallout = -1;        // rebuild the flight-log for the new time
   vEls['v-progress'].style.width = (f * 100).toFixed(1) + '%';
 }
 progTrack.addEventListener('pointerdown', e => {
