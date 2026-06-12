@@ -1203,8 +1203,8 @@ const APPROACH_CALLOUTS = [
 const EDL_CALLOUTS = [
   { at: 0.00, tag: 'UNDOCK', text: 'Separation — the shuttle releases from the Endurance and drops away toward the surface.' },
   { at: 0.07, tag: 'DEORBIT', text: 'Deorbit burn — committing to the descent. There is no turning back now.' },
-  { at: 0.13, tag: 'ENTRY INTERFACE', text: 'Entry interface — meeting the thin Martian air at thousands of kilometres an hour.' },
-  { at: 0.19, tag: 'PEAK HEATING', text: 'Peak heating — a sheath of plasma wraps the heat shield, glowing orange.' },
+  { at: 0.16, tag: 'ENTRY INTERFACE', text: 'Entry interface — meeting the thin Martian air at thousands of kilometres an hour.' },
+  { at: 0.24, tag: 'PEAK HEATING', text: 'Peak heating — a sheath of plasma wraps the heat shield, glowing orange.' },
   { at: 0.34, tag: 'AEROBRAKE', text: 'The atmosphere does the braking — far thinner than Earth’s, but enough to bleed speed.' },
   { at: 0.52, tag: 'PITCH UP', text: 'Pitching upright, engines swinging down for the powered descent.' },
   { at: 0.66, tag: 'RETRO BURN', text: 'Retro burn — the engines light to kill the last of the velocity.' },
@@ -1225,6 +1225,13 @@ const EDL = { ENTRY: 0.16, AERO: 0.42, PITCH: 0.55, BURN: 0.62, TOUCH: 0.965 };
 // brakes onto a high parking orbit this far from Mars's center and the shuttle flies
 // the final drop alone (matches the ORBIT INSERTION callout + the EDL undock).
 const PARK_D = 6.0;
+// EDL ground track: the station parks uprange of the colony so the whole descent moves
+// monotonically downrange — undock, arc through entry, and settle on a pad just beside
+// the base. Pad offsets (tang/cross from the colony center) picked on open ground,
+// clear of the solar farm and parked ships. The pad's own surface normal (dirPad in
+// updateEDL) is the true descent axis so the shuttle settles ON the curved ground.
+const EDL_LAT0 = -3.0, EDL_PAD_T = 0.1, EDL_PAD_C = 0.55;
+const sstep = (x, a, b) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 
 function earthGroundTexture(s = 1024) {
   // Barren high-desert floor — the dry tan/sand palette of the California Mojave around
@@ -1635,18 +1642,22 @@ function buildLander() {
 // horizon, with a small pale sun disc + glow. Replaces the clear black space on the ground.
 function buildMarsSky() {
   const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { uUp: { value: BASE_N.clone() }, uSun: { value: SUN_DIR.clone() }, uHorizon: { value: new THREE.Color(0xc99268) }, uZenith: { value: new THREE.Color(0x7c5240) } },
+    side: THREE.BackSide, transparent: true, depthWrite: false, fog: false,
+    // uFade lets EDL blend the dusty sky in with falling altitude (space → atmosphere),
+    // the same trick the launch sky uses in reverse.
+    uniforms: { uUp: { value: BASE_N.clone() }, uSun: { value: SUN_DIR.clone() }, uFade: { value: 1.0 }, uHorizon: { value: new THREE.Color(0xc99268) }, uZenith: { value: new THREE.Color(0x7c5240) } },
     vertexShader: `varying vec3 vL; void main(){ vL = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `uniform vec3 uUp,uSun,uHorizon,uZenith; varying vec3 vL;
+    fragmentShader: `uniform vec3 uUp,uSun,uHorizon,uZenith; uniform float uFade; varying vec3 vL;
       void main(){
-        float a = clamp(dot(vL, normalize(uUp)), 0.0, 1.0);
+        float a0 = dot(vL, normalize(uUp));
+        float a = clamp(a0, 0.0, 1.0);
         vec3 c = mix(uHorizon, uZenith, smoothstep(0.0, 0.65, a));
         float d = max(dot(vL, normalize(uSun)), 0.0);
         c += vec3(1.0,0.96,0.86) * pow(d, 260.0) * 2.0          // small pale sun disc
            + uHorizon * pow(d, 8.0) * 0.45                       // forward-scatter glow
            + uHorizon * smoothstep(0.16, 0.0, a) * 0.4;          // hazy horizon band
-        gl_FragColor = vec4(c, 1.0);
+        c *= mix(0.45, 1.0, smoothstep(-0.35, 0.0, a0));         // darken below the horizon so "down" reads
+        gl_FragColor = vec4(c, uFade);
       }`,
   });
   const m = new THREE.Mesh(new THREE.SphereGeometry(80, 48, 24), mat);
@@ -1976,6 +1987,7 @@ function updateLaunch(u) {
   if (voyage.dust) voyage.dust.visible = false;
   if (voyage.base) voyage.base.visible = false;
   if (voyage.station) voyage.station.visible = false;
+  if (voyage.edlLight) voyage.edlLight.visible = false;
   voyage.rocket.visible = voyage.launchTrail.visible = true;
   if (voyage.groundSmoke) voyage.groundSmoke.visible = true;
   // Barren California high-desert floor for the ground shot — a flat tan plain reaching a
@@ -2212,21 +2224,20 @@ function updateEDL(u) {
   if (voyage.vaporCone) voyage.vaporCone.visible = false;
   if (voyage.boosterGlow) voyage.boosterGlow.visible = false;
   if (voyage.frost) voyage.frost.visible = false;
-  if (voyage.base) voyage.base.visible = false;
   if (voyage.spentStage) voyage.spentStage.visible = false;
   if (earthSats) earthSats.visible = true;
   voyage.ellipseFull.visible = voyage.ellipseTrail.visible = false;
   voyage.ship.visible = true;
-  voyage.station.visible = true;                          // Endurance waits in orbit above
-  if (voyage.marsSky) voyage.marsSky.visible = false;
+  voyage.station.visible = u < 0.55;          // the parked Endurance shrinks to nothing once we're deep in the air
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = (key === 'mars');
   orbitPaths.forEach(o => { o.visible = false; });
 
   const s = 0.94 + u * 0.06;
   planetMeshes.mars.orbitGroup.rotation.y = -(MARS_START + s * MARS_SWEEP);
+  planetMeshes.mars.mesh.rotation.y = 0.6;     // freeze the spin so the colony site holds still (matches Surface Ops)
   const M = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(M);
   const mR = planetMeshes.mars.config.size;
-  // Land AT the colony site (BASE_N) so Surface Ops opens on the just-landed shuttle.
+  // Land beside the colony (BASE_N site) so Surface Ops opens on the just-landed shuttle.
   const dir = BASE_N;                                                   // local up at the landing site
   const tang = new THREE.Vector3().crossVectors(dir, UP).normalize();   // matches viewTarget('surface') t1
   const cross = new THREE.Vector3().crossVectors(tang, dir).normalize();// matches viewTarget('surface') t2
@@ -2238,57 +2249,110 @@ function updateEDL(u) {
     voyage.ground.material.transparent = false; voyage.ground.material.opacity = 1;
     voyage.ground.visible = true;
   }
+  // The colony is the destination for the low beats — but at this stylized scale it would
+  // read continent-sized from orbit, so it only appears behind the mid-stage camera cut.
+  if (voyage.base) {
+    voyage.base.position.copy(M).addScaledVector(dir, mR * 1.002);
+    voyage.base.quaternion.setFromUnitVectors(UP, dir);
+    voyage.base.visible = u > 0.46;
+    const b = voyage.base.userData, pulse = 1.15 + Math.sin(elapsed * 1.6) * 0.2;
+    if (b.glowMats) b.glowMats.forEach(m => { m.emissiveIntensity = pulse; });
+    if (b.flag) b.flag.rotation.z = Math.sin(elapsed * 2.0) * 0.16;
+  }
 
-  // Endurance parked on its high orbit (ring still turning), where the shuttle undocked.
-  voyage.station.position.copy(M).addScaledVector(dir, PARK_D);
+  // Endurance parked uprange on its high orbit (ring still turning): the descent ground
+  // track runs monotonically downrange from it to the pad beside the colony.
+  voyage.station.position.copy(M).addScaledVector(dir, PARK_D).addScaledVector(tang, EDL_LAT0);
   voyage.station.quaternion.setFromUnitVectors(AXIS_Z, tang);
   voyage.station.userData.ring.rotation.z = elapsed * 0.5;
 
-  // Descent profile: undock at the parked Endurance → aero-brake → pitch up → retro-burn
-  // to a soft hover-slam. Starts exactly at the station so the drop reads as one journey.
+  // The pad's true surface normal: the descent axis. Settling along dirPad puts the
+  // legs ON the curved ground (a flat tangent-plane offset would float them above it).
+  const dirPad = dir.clone().multiplyScalar(mR)
+    .addScaledVector(tang, EDL_PAD_T).addScaledVector(cross, EDL_PAD_C).normalize();
+
+  // Descent profile: ease off the dock → entry arc downrange → pitch up → retro-burn to a
+  // soft touchdown on the pad. One smooth position function so velocity (and attitude)
+  // can be read off it by finite difference.
   const startAlt = PARK_D - mR;
-  const dpos = (uu) => {
+  const REST = 0.48 * MS;                                 // legs-on-ground rest height
+  const posAt = (uu) => {
     const fall = Math.pow(clamp01((EDL.BURN - uu) / EDL.BURN), 1.3);
     const hover = Math.pow(clamp01((1 - uu) / (1 - EDL.BURN)), 2.0);
-    const a = uu < EDL.BURN ? ((startAlt - 1.5) * fall + 1.5) : (1.5 * hover);
-    const lat = Math.pow(clamp01((EDL.PITCH - uu) / EDL.PITCH), 1.2) * 4.5;
-    return M.clone().addScaledVector(dir, mR + a + 0.48 * MS).addScaledVector(tang, lat);
+    let a = uu < EDL.BURN ? ((startAlt - 1.5) * fall + 1.5) : (1.5 * hover);
+    a = startAlt + (a - startAlt) * sstep(uu, 0.015, 0.2);            // gentle sink off the dock
+    const drift = sstep(uu, 0.0, 0.66);                               // ground track eases onto the pad
+    const axis = dir.clone().lerp(dirPad, drift).normalize();         // radial axis: station's up → pad's up
+    const lat = EDL_LAT0 * (1 - drift);
+    return M.clone().addScaledVector(axis, mR + a + REST).addScaledVector(tang, lat);
   };
-  const pos = dpos(u);
-  const alt = pos.distanceTo(M) - mR;
-  const velDir = dpos(Math.min(1, u + 0.012)).sub(pos);
-  if (velDir.lengthSq() < 1e-7) velDir.copy(dir).negate();
-  velDir.normalize();
+  const pos = posAt(u);
+  const alt = pos.distanceTo(M) - mR - REST;              // height of the legs above the pad
+  const velDir = posAt(Math.min(1, u + 0.01)).sub(pos);
+  if (velDir.lengthSq() < 1e-9) velDir.copy(dirPad).negate(); else velDir.normalize();
   voyage.ship.position.copy(pos);
 
-  // Attitude: nose-forward glide → pitches upright (engine down) for the burn + landing.
-  const qGlide = new THREE.Quaternion().setFromUnitVectors(AXIS_Z, velDir);
-  const qUp = new THREE.Quaternion().setFromUnitVectors(AXIS_Z, dir);
-  voyage.ship.quaternion.copy(qGlide).slerp(qUp, clamp01((u - EDL.PITCH + 0.06) / 0.18));
+  // Attitude from an explicit wings-level basis — docked along the station spine, nose
+  // into the airflow for the glide, upright (engines down) for the burn. Blending the
+  // NOSE DIRECTION inside one stable frame avoids the setFromUnitVectors roll-flip that
+  // used to snap the craft sideways at pitch-up.
+  const wDock = 1 - sstep(u, 0.05, 0.18);
+  const wUp = sstep(u, EDL.PITCH - 0.05, EDL.PITCH + 0.10);
+  const wGlide = Math.max(0, 1 - wDock - wUp);
+  const nose = new THREE.Vector3()
+    .addScaledVector(tang, wDock + 0.001)                 // tiny tang bias keeps the basis non-degenerate
+    .addScaledVector(velDir, wGlide)
+    .addScaledVector(dirPad, wUp).normalize();
+  const wing = new THREE.Vector3().crossVectors(dirPad, nose);
+  if (wing.lengthSq() < 1e-4) wing.crossVectors(dirPad, tang);
+  wing.normalize();
+  const shipY = new THREE.Vector3().crossVectors(nose, wing).normalize();
+  voyage.ship.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(wing, shipY, nose));
 
   const sd = voyage.ship.userData;
-  const inEntry = u < EDL.AERO, landing = u >= EDL.BURN, touched = u > EDL.TOUCH;
+  const deorbit = u >= 0.07 && u < 0.13;                  // short burn commits the descent
+  const inEntry = u >= EDL.ENTRY && u < EDL.AERO;
+  const landing = u >= EDL.BURN, touched = u > EDL.TOUCH;
 
   // Entry plasma glow + ionization trail (brief, high up).
   voyage.flash.visible = inEntry;
   if (inEntry) {
-    const heat = clamp01(1 - Math.abs(u - 0.24) / 0.14);   // plasma peaks after undock, fades before aerobrake
-    voyage.flash.position.copy(pos).addScaledVector(velDir, 0.35 * MS);   // glow just ahead of the heat shield
-    voyage.flash.material.opacity = heat * 0.55;
-    voyage.flash.scale.setScalar((0.5 + heat * 0.9) * MS);
-    sd.trail.material.color.setHex(0xff7a32); sd.trail.material.opacity = heat * 0.6;
-    sd.trail.scale.set(0.9 + heat * 0.6, 1.8 + heat * 1.8, 1);
+    const heat = clamp01(1 - Math.abs(u - 0.26) / 0.15);   // plasma peaks mid-entry
+    voyage.flash.position.copy(pos).addScaledVector(velDir, 0.35 * MS);   // glow just ahead of the nose
+    voyage.flash.material.opacity = heat * 0.6;
+    voyage.flash.scale.setScalar((0.5 + heat * 1.0) * MS);
+    sd.trail.material.color.setHex(0xff7a32); sd.trail.material.opacity = heat * 0.7;
+    sd.trail.scale.set(0.9 + heat * 0.7, 1.8 + heat * 2.2, 1);
   }
 
-  // Retro/landing burn: a tight bright collimated column, cut the instant legs settle.
-  sd.plume.visible = landing && !touched;
+  // Engines: the deorbit blip, then the retro/landing burn — cut the instant legs settle.
+  sd.plume.visible = (deorbit || landing) && !touched;
   if (sd.plume.visible) {
-    const thr = 0.6 + clamp01((u - EDL.BURN) / (1 - EDL.BURN)) * 0.7;
+    const thr = deorbit ? 0.55 : 0.6 + clamp01((u - EDL.BURN) / (1 - EDL.BURN)) * 0.7;
     const f = 1 + Math.sin(elapsed * 44) * 0.1;
-    sd.plume.scale.set(0.85, thr * f, 0.85);
-    sd.trail.material.color.setHex(0x6cc8ff); sd.trail.material.opacity = 0.9; sd.trail.scale.setScalar(2.2);
+    sd.plume.scale.set(deorbit ? 0.6 : 0.85, thr * f, deorbit ? 0.6 : 0.85);
+    sd.trail.material.color.setHex(0x6cc8ff); sd.trail.material.opacity = 0.9; sd.trail.scale.setScalar(deorbit ? 1.4 : 2.2);
   } else if (!inEntry) { sd.trail.material.opacity = 0; sd.trail.scale.setScalar(0.001); }
   sd.legs.visible = u > 0.6;
+
+  // The landing burn lights the pad below — the glow swells as the ground nears.
+  if (voyage.edlLight) {
+    const lit = landing && !touched ? clamp01((1.6 - alt) / 1.6) : 0;
+    voyage.edlLight.visible = lit > 0.01;
+    voyage.edlLight.intensity = lit * 2.2;
+    voyage.edlLight.position.copy(pos).addScaledVector(dirPad, -0.5 * MS);
+  }
+
+  // Dusty Mars sky fades in as the shuttle drops into the atmosphere (space → haze),
+  // the launch sky's trick in reverse.
+  if (voyage.marsSky) {
+    const fade = clamp01((2.2 - alt) / 1.4);
+    voyage.marsSky.visible = fade > 0.01;
+    voyage.marsSky.position.copy(M);
+    voyage.marsSky.material.uniforms.uSun.value.copy(M).multiplyScalar(-1).normalize();
+    voyage.marsSky.material.uniforms.uFade.value = fade;
+    asteroidBelt.visible = fade < 0.5;                    // no asteroids hanging in the daytime haze
+  }
 
   // Dust + a few lofted debris kicked up by the burn near touchdown; settles after.
   if (voyage.dust) {
@@ -2299,8 +2363,8 @@ function updateEDL(u) {
       // and slowly settles — a reddish Mars dust wall blown out flat across the pad.
       const settle = touched ? clamp01((0.998 - u) / 0.05) : 1;
       const amp = touched ? settle : clamp01((2.4 * MS - alt) / (2.2 * MS));
-      voyage.dust.position.copy(M).addScaledVector(dir, mR + 0.04 * MS);
-      voyage.dust.quaternion.setFromUnitVectors(UP, dir);
+      voyage.dust.position.copy(M).addScaledVector(dirPad, mR + 0.04 * MS);
+      voyage.dust.quaternion.setFromUnitVectors(UP, dirPad);
       voyage.dust.userData.parts.forEach((p, i) => {
         const debris = (i % 7 === 0);
         const reach = amp * p.userData.speed * (debris ? 1.8 : 1.5) * MS;
@@ -2312,29 +2376,36 @@ function updateEDL(u) {
     }
   }
 
-  // Telemetry handoff (read in updateTelemetry).
+  // Telemetry handoff (read in updateTelemetry). The start reference is the true
+  // spherical altitude at the parked station (radial + lateral), so ALT opens at max.
   voyage.edlAlt = alt;
-  voyage.edlPhase = u < EDL.ENTRY ? 'ENTRY INTERFACE' : u < EDL.AERO ? 'PLASMA / AEROBRAKE'
+  voyage.edlStartAlt = Math.hypot(PARK_D, EDL_LAT0) - mR;
+  voyage.edlPhase = u < 0.07 ? 'UNDOCK' : u < EDL.ENTRY ? 'DEORBIT' : u < EDL.AERO ? 'PLASMA / AEROBRAKE'
     : u < EDL.BURN ? 'PITCH-UP' : u < EDL.TOUCH ? 'RETRO BURN' : 'TOUCHDOWN';
 
-  // Camera: undock → high entry shot → tracking the descent → low ground-level burn + landing.
+  // Camera beats (offsets ride MS; up = local surface normal so every shot reads level):
+  // undock over the station → entry chase → dusty-sky hero → low pad shot → touchdown.
+  const site = M.clone().addScaledVector(dirPad, mR);
+  const upCam = dir.clone().lerp(dirPad, sstep(u, 0.3, 0.6)).normalize();  // roll eases from station-local to pad-local up
   let camP, lookP, fov;
-  // The shuttle is the focus through EDL, so its chase offsets scale with the (now 10x
-  // smaller) craft — keeping it framed as a real lander against Mars, not a speck.
-  if (u < 0.12) {                              // undock: the shuttle drops away from the Endurance, Mars below
-    camP = pos.clone().addScaledVector(cross, 4.6 * MS).addScaledVector(dir, 0.6 * MS).addScaledVector(tang, 0.6 * MS);
-    lookP = pos.clone().addScaledVector(tang, -0.6 * MS).addScaledVector(dir, -1.1 * MS); fov = 52;   // craft centred, Mars below
-  } else if (u < EDL.AERO) {
-    camP = pos.clone().addScaledVector(cross, 3.0 * MS).addScaledVector(dir, 1.4 * MS).addScaledVector(tang, 2.0 * MS);
-    lookP = pos.clone().addScaledVector(velDir, 1.4 * MS); fov = 50;
-  } else if (u < EDL.BURN + 0.05) {
-    camP = pos.clone().addScaledVector(cross, 2.2 * MS).addScaledVector(dir, 0.6 * MS).addScaledVector(tang, 1.1 * MS);
-    lookP = pos.clone().addScaledVector(dir, -0.1 * MS); fov = 44;
-  } else {
-    camP = pos.clone().addScaledVector(cross, 1.9 * MS).addScaledVector(dir, 0.5 * MS).addScaledVector(tang, 0.8 * MS);
-    lookP = pos.clone().addScaledVector(dir, -0.15 * MS); fov = 40;
+  if (u < 0.14) {                              // from above the station: the shuttle slips off the dock and
+    camP = voyage.station.position.clone()     // falls away toward the red disc far below
+      .addScaledVector(dir, 8.0 * MS).addScaledVector(cross, 1.5 * MS).addScaledVector(tang, 1.0 * MS);
+    lookP = pos.clone().addScaledVector(dir, -2.0 * MS); fov = 50;
+  } else if (u < 0.46) {                       // entry: chase from behind-above, plasma streaking, Mars rising into frame
+    camP = pos.clone().addScaledVector(tang, -6.5 * MS).addScaledVector(dir, 2.6 * MS).addScaledVector(cross, 2.2 * MS);
+    lookP = pos.clone().addScaledVector(velDir, 2.2 * MS).addScaledVector(dir, -1.8 * MS); fov = 52;
+  } else if (u < 0.66) {                       // aerobrake → pitch-up: side hero as the dusty sky materializes
+    camP = pos.clone().addScaledVector(cross, 3.0 * MS).addScaledVector(dirPad, 0.7 * MS).addScaledVector(tang, 1.0 * MS);
+    lookP = pos.clone().addScaledVector(dirPad, -0.3 * MS); fov = 48;
+  } else if (u < 0.93) {                       // powered descent: low at the pad, colony behind, ship sinking to us
+    camP = site.clone().addScaledVector(cross, 3.2 * MS).addScaledVector(dirPad, 1.6 * MS).addScaledVector(tang, 1.6 * MS);
+    lookP = pos.clone().lerp(site, 0.25).addScaledVector(dirPad, 0.5 * MS); fov = 50;
+  } else {                                     // touchdown: ground level — legs, dust wall, engines cutting
+    camP = site.clone().addScaledVector(cross, 2.2 * MS).addScaledVector(dirPad, 0.7 * MS).addScaledVector(tang, -1.4 * MS);
+    lookP = pos.clone().addScaledVector(dirPad, 0.4 * MS); fov = 44;
   }
-  return { pos: camP, look: lookP, fov, up: dir };
+  return { pos: camP, look: lookP, fov, up: upCam };
 }
 
 function updateHelio(ph, u, dt) {
@@ -2346,6 +2417,7 @@ function updateHelio(ph, u, dt) {
   if (voyage.spentStage) voyage.spentStage.visible = false;
   if (voyage.frost) voyage.frost.visible = false;
   if (voyage.dust) voyage.dust.visible = false;
+  if (voyage.edlLight) voyage.edlLight.visible = false;
   if (voyage.earthGround) voyage.earthGround.visible = false;
   if (voyage.launchField) voyage.launchField.visible = false;
   if (voyage.launchRoad) voyage.launchRoad.visible = false;
@@ -2432,6 +2504,7 @@ function updateHelio(ph, u, dt) {
       if (voyage.marsSky) {
         voyage.marsSky.position.copy(Mw);
         voyage.marsSky.material.uniforms.uSun.value.copy(Mw).multiplyScalar(-1).normalize();   // sun direction from the colony
+        voyage.marsSky.material.uniforms.uFade.value = 1;   // fully in the atmosphere on the ground
         voyage.marsSky.visible = true;
       }
       asteroidBelt.visible = false;   // no asteroids hanging in the Martian daytime sky
@@ -2484,14 +2557,15 @@ function updateTelemetry(ph, u, s) {
       }).join('');
     }
   } else if (ph.mode === 'edl') {
-    const a = voyage.edlAlt ?? 8;
-    vEls['v-elapsed'].textContent = `ALT ${Math.max(0, Math.round((a - 0.48) / 8.5 * 120))} KM`;
-    vEls['v-vel'].textContent = `${Math.max(0, (a - 0.48) / 8.5 * 4.6 + (u < EDL.AERO ? 1.0 : 0)).toFixed(1)} KM/S`;
+    const a = Math.max(0, voyage.edlAlt ?? 4.7), a0 = voyage.edlStartAlt || 4.7;
+    vEls['v-elapsed'].textContent = `ALT ${Math.round(a / a0 * 125)} KM`;
+    vEls['v-vel'].textContent = `${Math.max(0, a / a0 * 4.2 + (u >= EDL.ENTRY && u < EDL.AERO ? 1.2 : 0)).toFixed(1)} KM/S`;
     vEls['v-dist'].textContent = voyage.edlPhase || 'DESCENT';
     const retro = u >= EDL.BURN && u <= EDL.TOUCH, plasma = u >= EDL.ENTRY && u < EDL.AERO;
+    const deorb = u >= 0.07 && u < 0.13;
     vEls['v-engine'].textContent = u > EDL.TOUCH ? '○ DOWN' : retro ? '● RETRO' : plasma ? '▲ PLASMA'
-      : u < EDL.ENTRY ? '○ FREE-FALL' : '○ AEROBRAKE';
-    vEls['v-engine'].className = (retro || plasma) ? 'warn' : '';
+      : deorb ? '● DEORBIT' : u < 0.07 ? '○ UNDOCK' : u < EDL.ENTRY ? '○ FREE-FALL' : '○ AEROBRAKE';
+    vEls['v-engine'].className = (retro || plasma || deorb) ? 'warn' : '';
     // Progressive descent flight-log: reveal callouts as each EDL phase passes.
     let ci = 0; for (let i = 0; i < EDL_CALLOUTS.length; i++) if (u >= EDL_CALLOUTS[i].at) ci = i;
     if (ci !== voyage._lastCallout) {
@@ -2701,6 +2775,9 @@ function startVoyage() {
     scene.add(voyage.frost);
     voyage.dust = buildParticles(40, 0xc98f63, false, 0.18, 0.5);    // dust at touchdown
     scene.add(voyage.dust);
+    voyage.edlLight = new THREE.PointLight(0xcfe8ff, 0, 2.5, 2);     // landing burn lighting the pad
+    voyage.edlLight.visible = false;
+    scene.add(voyage.edlLight);
     voyage.base = buildMarsBase();                                   // Mars surface colony
     voyage.base.visible = false;
     scene.add(voyage.base);
@@ -2781,6 +2858,8 @@ function endVoyage() {
     if (voyage.boosterGlow) voyage.boosterGlow.visible = false;
     if (voyage.spentStage) voyage.spentStage.visible = false;
     if (voyage.station) voyage.station.visible = false;
+    if (voyage.marsSky) voyage.marsSky.visible = false;
+    if (voyage.edlLight) voyage.edlLight.visible = false;
   }
   for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = true;
   orbitPaths.forEach(o => { o.visible = true; });
