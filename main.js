@@ -1733,57 +1733,189 @@ function buildMarsBase() {
     return a;
   }
 
-  // Central landing pad + the two ships (hero + the crew ship just flown down).
-  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.02, 28), padMat));
-  ship(0.7, -0.45, 0.4);          // hero
-  ship(-0.55, 0.35, -0.7);        // crew ship you arrived on
+  // Glowing top-light for masts/towers; red blinkers stored for the live pulse.
+  const blinkMat = new THREE.MeshBasicMaterial({ color: 0xff4a3a });
+  const blinkMats = [blinkMat];
+  function beacon(grp, x, y, z) {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 6), blinkMat);
+    b.position.set(x, y, z); grp.add(b);
+  }
+  // Ground-anchored light post (replaces the old floating dots).
+  function lightPost(x, z, mat) {
+    const p = new THREE.Group(); p.position.set(x, 0, z);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.07, 5), dark); pole.position.y = 0.035; p.add(pole);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 6), mat); lamp.position.y = 0.075; p.add(lamp);
+    g.add(p); return p;
+  }
+  // Pressurised connecting tunnel between two ground points.
+  function tunnel(x1, z1, x2, z2) {
+    const a = new THREE.Vector3(x1, 0.045, z1), b = new THREE.Vector3(x2, 0.045, z2);
+    const t = new THREE.Group(); t.position.copy(a).lerp(b, 0.5);
+    const len = a.distanceTo(b);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, len, 10), white);
+    m.quaternion.setFromUnitVectors(UP, b.clone().sub(a).normalize()); t.add(m);
+    const win = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, len * 0.8), warm);
+    win.quaternion.copy(m.quaternion); win.position.y = 0.028; t.add(win);
+    g.add(t); return t;
+  }
 
-  // Geodesic domes (a settlement cluster) + a greenhouse tint dome.
-  dome(-0.05, 0.18, 0.22); dome(0.28, 0.38, 0.16); dome(-0.42, -0.05, 0.15);
+  // --- Layout ---------------------------------------------------------------
+  // The crew landing pad — at the exact spot the EDL shuttle sets down
+  // (world tang 0.1 / cross 0.55 from the colony centre = local (-0.81, -0.77)).
+  const PAD_L = [-0.81, -0.77];
+  {
+    const p = new THREE.Group(); p.position.set(PAD_L[0], 0, PAD_L[1]);
+    const slab = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.33, 0.018, 28), padMat); slab.receiveShadow = true; p.add(slab);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.008, 6, 36), new THREE.MeshStandardMaterial({ color: 0xd8dee6, roughness: 0.7, emissive: 0xb8c4d0, emissiveIntensity: 0.35 }));
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.012; p.add(ring);
+    for (let i = 0; i < 8; i++) {                                  // edge lights guiding the shuttle in
+      const a = (i / 8) * TAU;
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.013, 6, 6), i % 2 ? cyan : warm);
+      lamp.position.set(Math.cos(a) * 0.30, 0.022, Math.sin(a) * 0.30); p.add(lamp);
+    }
+    g.add(p);
+  }
+  // Welcoming party + cargo staged at the pad edge.
+  const astro = makeAstronaut();
+  [[-0.52, -0.62], [-0.47, -0.72]].forEach(([ax, az]) => { const a = astro.clone(); a.position.set(ax, 0.05, az); g.add(a); });
+  [[-0.45, -0.5, 0.3], [-0.36, -0.55, -0.2], [-0.5, -0.4, 0.8]].forEach(([cx, cz, rot]) => {
+    const c = new THREE.Group(); c.position.set(cx, 0.025, cz); c.rotation.y = rot;
+    c.add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.08), dark));
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.01, 0.082), strut); lid.position.y = 0.03; c.add(lid);
+    g.add(c);
+  });
 
-  // Habitat capsules + a connecting tube between two of them.
-  const h1 = hab(0.0, -0.28, 0.34, 0.4), h2 = hab(0.34, -0.12, 0.28, 1.3);
-  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.34, 10), white);
-  tube.position.copy(h1.position).lerp(h2.position, 0.5); tube.position.y = 0.09;
-  tube.quaternion.setFromUnitVectors(UP, h2.position.clone().sub(h1.position).setY(0).normalize()); g.add(tube);
+  // The two ships: the colony's heavy-lift hero + the crew ship that came before.
+  ship(0.7, -0.45, 0.4);
+  ship(-0.55, 0.35, -0.7);
 
-  // Solar farm — rows of tilted panels.
-  for (let r = 0; r < 2; r++) for (let c = 0; c < 5; c++) {
-    const arr = new THREE.Group(); arr.position.set(-0.95 + c * 0.2, 0.08, 0.45 + r * 0.22);
+  // Dome cluster: one big habitat dome, two mid domes, and a green-glowing greenhouse.
+  dome(-0.02, 0.12, 0.30); dome(0.30, 0.38, 0.17); dome(-0.42, -0.08, 0.16);
+  {
+    const gh = new THREE.Group(); gh.position.set(0.07, 0, 0.58);
+    const geo = new THREE.IcosahedronGeometry(0.15, 1);
+    const shell = new THREE.Mesh(geo, glass); shell.scale.y = 0.62; gh.add(shell);
+    const frame = new THREE.LineSegments(new THREE.WireframeGeometry(geo), new THREE.LineBasicMaterial({ color: 0xbfe9ff, transparent: true, opacity: 0.4 }));
+    frame.scale.y = 0.62; gh.add(frame);
+    const greenMat = new THREE.MeshStandardMaterial({ color: 0x1d3a14, roughness: 1.0, emissive: 0x57e86b, emissiveIntensity: 1.0 });
+    glowMats.push(greenMat);
+    const green = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 8), greenMat); green.position.y = 0.025; green.scale.y = 0.5; gh.add(green);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.01, 8, 28), strut); ring.rotation.x = Math.PI / 2; ring.position.y = 0.005; gh.add(ring);
+    g.add(gh);
+  }
+
+  // Habitat capsules linked by a tunnel network back to the domes.
+  hab(0.02, -0.30, 0.34, 0.4); hab(0.36, -0.13, 0.28, 1.3); hab(-0.30, 0.30, 0.26, -0.5);
+  tunnel(0.02, -0.30, -0.02, 0.12); tunnel(0.36, -0.13, 0.30, 0.38);
+  tunnel(-0.30, 0.30, -0.02, 0.12); tunnel(-0.42, -0.08, 0.02, -0.30);
+  tunnel(0.07, 0.58, -0.02, 0.12);
+
+  // Control tower: the colony's lit nerve centre, red beacon on top.
+  {
+    const t = new THREE.Group(); t.position.set(0.38, 0, -0.36);
+    const mastT = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.22, 8), strut); mastT.position.y = 0.11; t.add(mastT);
+    const cab = new THREE.Mesh(new RoundedBoxGeometry(0.11, 0.06, 0.11, 2, 0.015), white); cab.position.y = 0.25; t.add(cab);
+    const winBand = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.058, 0.022, 12), warm); winBand.position.y = 0.255; t.add(winBand);
+    beacon(t, 0, 0.30, 0);
+    g.add(t);
+  }
+
+  // Solar farm — three rows of tilted panels feeding the base.
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) {
+    const arr = new THREE.Group(); arr.position.set(-0.95 + c * 0.2, 0.08, 0.45 + r * 0.2);
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.1, 6), dark); post.position.y = -0.05; arr.add(post);
     const panel = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.006, 0.13), panelMat); panel.rotation.x = -0.5; arr.add(panel);
     g.add(arr);
   }
 
-  // Comms dish, storage tanks, antenna mast.
-  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.34, 6), dark); mast.position.set(0.62, 0.17, 0.5); g.add(mast);
-  const dish = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 8, 0, TAU, 0, Math.PI * 0.42), white); dish.position.set(0.62, 0.34, 0.5); dish.rotation.set(-0.8, 0, 0.3); g.add(dish);
-  for (let i = 0; i < 2; i++) { const tank = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.12, 6, 14), white); tank.position.set(-0.78 + i * 0.16, 0.12, -0.4); g.add(tank); }
+  // Comms array: main dish + a small one, red blinker on the mast.
+  {
+    const cm = new THREE.Group(); cm.position.set(0.62, 0, 0.5);
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.34, 6), dark); mast.position.y = 0.17; cm.add(mast);
+    const dish = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 8, 0, TAU, 0, Math.PI * 0.42), white); dish.position.y = 0.34; dish.rotation.set(-0.8, 0, 0.3); cm.add(dish);
+    const dish2 = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 6, 0, TAU, 0, Math.PI * 0.42), white); dish2.position.set(0.1, 0.16, 0.05); dish2.rotation.set(-1.1, 0.5, 0); cm.add(dish2);
+    beacon(cm, 0, 0.36, 0);
+    g.add(cm);
+  }
 
-  // Rover with a short dirt track behind it.
-  const rover = new THREE.Group(); rover.position.set(-0.3, 0.04, 0.5);
-  rover.add(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.09), white));
-  for (let i = 0; i < 4; i++) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.02, 10), dark); w.rotation.x = Math.PI / 2; w.position.set(i < 2 ? 0.06 : -0.06, -0.02, i % 2 ? 0.05 : -0.05); rover.add(w); }
-  g.add(rover);
+  // Ice-mining rig: a derrick over the subsurface glacier, drill string down the middle.
+  {
+    const rig = new THREE.Group(); rig.position.set(-0.62, 0, 0.72);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * TAU + Math.PI / 4;
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.3, 5), strut);
+      leg.position.set(Math.cos(a) * 0.05, 0.14, Math.sin(a) * 0.05);
+      leg.quaternion.setFromUnitVectors(UP, new THREE.Vector3(-Math.cos(a) * 0.3, 1, -Math.sin(a) * 0.3).normalize());
+      rig.add(leg);
+    }
+    const crown = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.025, 0.07), dark); crown.position.y = 0.29; rig.add(crown);
+    const drill = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.28, 5), dark); drill.position.y = 0.14; rig.add(drill);
+    const shed = new THREE.Mesh(new RoundedBoxGeometry(0.1, 0.05, 0.08, 2, 0.012), white); shed.position.set(0.09, 0.025, 0.02); rig.add(shed);
+    beacon(rig, 0, 0.315, 0);
+    g.add(rig);
+  }
+
+  // Fuel depot: tank cluster between the pad and the base, pipe run to the pad.
+  for (let i = 0; i < 3; i++) {
+    const tk = new THREE.Group(); tk.position.set(-0.84 + i * 0.14, 0, -0.34 - (i % 2) * 0.07);
+    const tank = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.11, 6, 14), white); tank.position.y = 0.1; tk.add(tank);
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.062, 0.03, 12), dark); skirt.position.y = 0.015; tk.add(skirt);
+    g.add(tk);
+  }
+  {
+    const pipe = new THREE.Group(); pipe.position.set(-0.78, 0, -0.55);
+    const run = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.34, 6), strut);
+    run.rotation.x = Math.PI / 2; run.position.y = 0.02; pipe.add(run);
+    g.add(pipe);
+  }
+
+  // Rovers — one parked mid-base, one out by the pad with its dirt track.
+  function roverAt(x, z, rot) {
+    const rover = new THREE.Group(); rover.position.set(x, 0.04, z); rover.rotation.y = rot;
+    rover.add(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.09), white));
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.08), winMat); cab.position.set(0.045, 0.04, 0); rover.add(cab);
+    for (let i = 0; i < 4; i++) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.02, 10), dark); w.rotation.x = Math.PI / 2; w.position.set(i < 2 ? 0.06 : -0.06, -0.02, i % 2 ? 0.05 : -0.05); rover.add(w); }
+    g.add(rover); return rover;
+  }
+  roverAt(-0.3, 0.5, 0.3); roverAt(-0.55, -0.6, -1.1);
   const track = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.4), new THREE.MeshStandardMaterial({ color: 0x3a2414, roughness: 1, transparent: true, opacity: 0.55, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, depthWrite: false }));
   track.rotation.x = -Math.PI / 2; track.position.set(-0.42, 0.012, 0.62); track.rotation.z = 0.5; g.add(track);
 
-  // Astronauts (cloned) for life + scale.
-  const astro = makeAstronaut();
+  // Astronauts about the base for life + scale.
   [[0.32, 0.05], [0.18, -0.12], [-0.12, 0.42], [0.5, 0.2]].forEach(([ax, az]) => { const a = astro.clone(); a.position.set(ax, 0.05, az); g.add(a); });
 
-  // Flag.
-  const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.26, 6), strut); flagPole.position.set(0.1, 0.13, 0.4); g.add(flagPole);
-  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.075), new THREE.MeshStandardMaterial({ color: 0xc8443a, roughness: 0.9, side: THREE.DoubleSide, emissive: 0x3a0a08, emissiveIntensity: 0.3 }));
-  flag.position.set(0.165, 0.22, 0.4); g.add(flag);
+  // Flag by the big dome.
+  {
+    const fg = new THREE.Group(); fg.position.set(0.1, 0, 0.4);
+    const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.26, 6), strut); flagPole.position.y = 0.13; fg.add(flagPole);
+    var flag = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.075), new THREE.MeshStandardMaterial({ color: 0xc8443a, roughness: 0.9, side: THREE.DoubleSide, emissive: 0x3a0a08, emissiveIntensity: 0.3 }));
+    flag.position.set(0.065, 0.22, 0); fg.add(flag);
+    g.add(fg);
+  }
 
-  // Perimeter / path lights.
-  for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU, r = 0.5 + (i % 3) * 0.06; const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 6), i % 2 ? warm : cyan); dot.position.set(Math.cos(a) * r, 0.02, Math.sin(a) * r); g.add(dot); }
+  // Pathway lights: posts lining the route from the landing pad into the base,
+  // plus a loose perimeter ring.
+  [[-0.62, -0.6], [-0.44, -0.42], [-0.26, -0.3], [-0.1, -0.2]].forEach(([x, z], i) => lightPost(x, z, i % 2 ? warm : cyan));
+  for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU; lightPost(Math.cos(a) * (0.95 + (i % 3) * 0.1), Math.sin(a) * (0.95 + (i % 3) * 0.1), i % 2 ? warm : cyan); }
 
   // Warm "golden hour" fill so the base reads even on Mars's shadowed side.
   const fill = new THREE.PointLight(0xffce96, 2.2, 9, 2); fill.position.set(0.0, 1.4, 0.3); g.add(fill);
 
-  g.userData = { glowMats, flag };
+  // --- Conform to the curved surface ---------------------------------------
+  // The colony spans ±1.1 local on a globe only 2.64 local-units in radius, so a flat
+  // layout leaves the rim floating ~0.25 in the air. Drop every ground-anchored child
+  // onto the sphere and tilt it to its own local normal.
+  const Rloc = planetMeshes.mars.config.size / 0.5;
+  g.children.forEach(c => {
+    if (c.isLight) return;
+    const d2 = c.position.x * c.position.x + c.position.z * c.position.z;
+    const ny = Math.sqrt(Math.max(0, Rloc * Rloc - d2));
+    c.position.y += ny - Rloc;
+    const n = new THREE.Vector3(c.position.x, ny, c.position.z).normalize();
+    c.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(UP, n));
+  });
+
+  g.userData = { glowMats, flag, blinkMats };
   g.scale.setScalar(0.5);
   return g;
 }
@@ -1814,7 +1946,7 @@ function marsGroundTexture(s = 1024) {
 }
 function buildMarsGround() {
   const mR = planetMeshes.mars.config.size;
-  const geo = new THREE.SphereGeometry(mR, 96, 72, 0, TAU, 0, Math.PI * 0.42);   // cap around +Y
+  const geo = new THREE.SphereGeometry(mR, 96, 72, 0, TAU, 0, Math.PI * 0.6);   // cap around +Y, edge past the horizon in every shot
   // Dedicated Mars-dirt material (NOT the globe shader, whose pole-apex would read as ice);
   // MeshStandard so it catches the sun + IBL and RECEIVES the colony's contact shadow.
   const mat = new THREE.MeshStandardMaterial({ map: marsGroundTexture(), color: 0xc16a3c, roughness: 0.98, metalness: 0.0 });
@@ -2258,6 +2390,7 @@ function updateEDL(u) {
     const b = voyage.base.userData, pulse = 1.15 + Math.sin(elapsed * 1.6) * 0.2;
     if (b.glowMats) b.glowMats.forEach(m => { m.emissiveIntensity = pulse; });
     if (b.flag) b.flag.rotation.z = Math.sin(elapsed * 2.0) * 0.16;
+    if (b.blinkMats) { const on = Math.sin(elapsed * 4.0) > 0.2 ? 1 : 0.1; b.blinkMats.forEach(m => m.color.setRGB(on, 0.29 * on, 0.23 * on)); }
   }
 
   // Endurance parked uprange on its high orbit (ring still turning): the descent ground
@@ -2401,9 +2534,9 @@ function updateEDL(u) {
   } else if (u < 0.93) {                       // powered descent: low at the pad, colony behind, ship sinking to us
     camP = site.clone().addScaledVector(cross, 3.2 * MS).addScaledVector(dirPad, 1.6 * MS).addScaledVector(tang, 1.6 * MS);
     lookP = pos.clone().lerp(site, 0.25).addScaledVector(dirPad, 0.5 * MS); fov = 50;
-  } else {                                     // touchdown: ground level — legs, dust wall, engines cutting
-    camP = site.clone().addScaledVector(cross, 2.2 * MS).addScaledVector(dirPad, 0.7 * MS).addScaledVector(tang, -1.4 * MS);
-    lookP = pos.clone().addScaledVector(dirPad, 0.4 * MS); fov = 44;
+  } else {                                     // touchdown: 3/4 shot over the pad — legs, dust wall, colony beyond
+    camP = site.clone().addScaledVector(cross, 3.0 * MS).addScaledVector(dirPad, 1.2 * MS).addScaledVector(tang, -2.0 * MS);
+    lookP = pos.clone().addScaledVector(dirPad, 0.3 * MS); fov = 46;
   }
   return { pos: camP, look: lookP, fov, up: upCam };
 }
@@ -2428,7 +2561,8 @@ function updateHelio(ph, u, dt) {
   if (earthSats) earthSats.visible = true;
   const isSurface = ph.key === 'surface';
   voyage.ellipseFull.visible = voyage.ellipseTrail.visible = !isSurface;
-  for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = true;
+  // On the surface only Mars exists — no other planets hanging in the daytime sky.
+  for (const key in planetMeshes) planetMeshes[key].tiltGroup.visible = !isSurface || key === 'mars';
   orbitPaths.forEach(o => { o.visible = !isSurface; });   // hide orbit rings on the Mars close-up
 
   const s = ph.s0 + u * (ph.s1 - ph.s0);
@@ -2478,7 +2612,19 @@ function updateHelio(ph, u, dt) {
     sd.legs.visible = false;
   } else {
     voyage.station.visible = false;
-    voyage.ship.visible = false;
+    // The shuttle stays parked on the colony landing pad, right where EDL set it down.
+    const Mw = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(Mw);
+    const mR = planetMeshes.mars.config.size;
+    const tangS = new THREE.Vector3().crossVectors(BASE_N, UP).normalize();
+    const crossS = new THREE.Vector3().crossVectors(tangS, BASE_N).normalize();
+    const dirPad = BASE_N.clone().multiplyScalar(mR).addScaledVector(tangS, EDL_PAD_T).addScaledVector(crossS, EDL_PAD_C).normalize();
+    voyage.ship.visible = true;
+    voyage.ship.position.copy(Mw).addScaledVector(dirPad, mR + 0.48 * MS);
+    voyage.ship.quaternion.setFromUnitVectors(AXIS_Z, dirPad);
+    const sd = voyage.ship.userData;
+    sd.legs.visible = true;
+    sd.plume.visible = false;
+    sd.trail.material.opacity = 0; sd.trail.scale.setScalar(0.001);
   }
 
   // Mars surface colony — shown only on the Surface Operations close-up, planted on
@@ -2497,10 +2643,11 @@ function updateHelio(ph, u, dt) {
       voyage.base.position.copy(Mw).addScaledVector(BASE_N, mR * 1.002);   // seat on the ground cap
       voyage.base.quaternion.setFromUnitVectors(UP, BASE_N);
       voyage.base.visible = true;
-      // Living base: gently pulse the window glow + flutter the flag.
+      // Living base: gently pulse the window glow, flutter the flag, blink the beacons.
       const b = voyage.base.userData, pulse = 1.15 + Math.sin(elapsed * 1.6) * 0.2;
       if (b.glowMats) b.glowMats.forEach(m => { m.emissiveIntensity = pulse; });
       if (b.flag) b.flag.rotation.z = Math.sin(elapsed * 2.0) * 0.16;
+      if (b.blinkMats) { const on = Math.sin(elapsed * 4.0) > 0.2 ? 1 : 0.1; b.blinkMats.forEach(m => m.color.setRGB(on, 0.29 * on, 0.23 * on)); }
       if (voyage.marsSky) {
         voyage.marsSky.position.copy(Mw);
         voyage.marsSky.material.uniforms.uSun.value.copy(Mw).multiplyScalar(-1).normalize();   // sun direction from the colony
