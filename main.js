@@ -1221,6 +1221,10 @@ const SURFACE_CALLOUTS = [
   { at: 0.87, tag: 'WELCOME', text: 'Welcome to Mars. The journey that began on a launch pad ends here, 480 million km from home.' },
 ];
 const EDL = { ENTRY: 0.16, AERO: 0.42, PITCH: 0.55, BURN: 0.62, TOUCH: 0.965 };
+// The Endurance never lands: the transfer would carry it right down to Mars, so it
+// brakes onto a high parking orbit this far from Mars's center and the shuttle flies
+// the final drop alone (matches the ORBIT INSERTION callout + the EDL undock).
+const PARK_D = 6.0;
 
 function earthGroundTexture(s = 1024) {
   // Barren high-desert floor — the dry tan/sand palette of the California Mojave around
@@ -2235,16 +2239,18 @@ function updateEDL(u) {
     voyage.ground.visible = true;
   }
 
-  // Endurance parked in Mars orbit (ring still turning), where the shuttle undocked.
-  voyage.station.position.copy(M).addScaledVector(dir, mR + 8.5).addScaledVector(tang, 2.6);
+  // Endurance parked on its high orbit (ring still turning), where the shuttle undocked.
+  voyage.station.position.copy(M).addScaledVector(dir, PARK_D);
   voyage.station.quaternion.setFromUnitVectors(AXIS_Z, tang);
   voyage.station.userData.ring.rotation.z = elapsed * 0.5;
 
-  // Descent profile: undock high → aero-brake → pitch up → retro-burn to a soft hover-slam.
+  // Descent profile: undock at the parked Endurance → aero-brake → pitch up → retro-burn
+  // to a soft hover-slam. Starts exactly at the station so the drop reads as one journey.
+  const startAlt = PARK_D - mR;
   const dpos = (uu) => {
     const fall = Math.pow(clamp01((EDL.BURN - uu) / EDL.BURN), 1.3);
     const hover = Math.pow(clamp01((1 - uu) / (1 - EDL.BURN)), 2.0);
-    const a = uu < EDL.BURN ? (7.0 * fall + 1.5) : (1.5 * hover);
+    const a = uu < EDL.BURN ? ((startAlt - 1.5) * fall + 1.5) : (1.5 * hover);
     const lat = Math.pow(clamp01((EDL.PITCH - uu) / EDL.PITCH), 1.2) * 4.5;
     return M.clone().addScaledVector(dir, mR + a + 0.48 * MS).addScaledVector(tang, lat);
   };
@@ -2358,6 +2364,13 @@ function updateHelio(ph, u, dt) {
   const fwd = transferState(Math.min(1, s + 0.004)).pos.clone().sub(st.pos).normalize();
   if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, 1);
   planetMeshes.mars.orbitGroup.rotation.y = -(MARS_START + s * MARS_SWEEP);
+  // Parking-orbit clamp: hold the Endurance PARK_D clear of Mars's center — it slides
+  // around the planet instead of descending into it (reads as the capture/insertion).
+  if (!isSurface) {
+    const Mw = new THREE.Vector3(); planetMeshes.mars.tiltGroup.getWorldPosition(Mw);
+    const toShip = st.pos.clone().sub(Mw);
+    if (toShip.length() < PARK_D) st.pos.copy(Mw).addScaledVector(toShip.normalize(), PARK_D);
+  }
 
   if (!isSurface) {
     // The Endurance flies the transfer, its ring spinning for artificial gravity.
