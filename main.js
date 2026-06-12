@@ -1913,58 +1913,60 @@ const PHASES = [
     // The traveller's log: all notes for the stage shown together, simple and fun —
     // meant to be narrated over live.
     facts: [
-      'the rocket is basically a 20-story fuel tank with seats on top.',
-      'liftoff feels like 3 people sitting on your chest. for 9 minutes.',
-      'going UP is the easy part — going FAST sideways is what gets you to orbit.',
-      'this ride only exists every 26 months, when Earth and Mars line up. miss it and you wait.',
-      'halfway up, the first stage falls off and flies itself home to be reused.',
-      'engines off — and just like that, you float. everything floats.',
-      'your stomach arrives in orbit a few seconds after the rest of you.',
+      'the weather looks a bit overcast but our take off should be pretty clean.',
+      'its gonna be a modest 1-2 gforce of for about  20 minutes for us to reach escape velocity',
+      'see the curvature of our beautiful blue marble once we leave stratosphere',
+      'the sky goes from blue to dark purple to black in about a minute. you can watch the atmosphere end',
+      'after that engines off for a few min until and weightlessness',
+      'everyone hands are gonna rise, keep the space sickness bags held tight in your hands please'
+
     ]
   },
   {
     key: 'cruise', label: '02 · CRUISE', short: 'CRUISE', dur: 140, mode: 'helio', s0: 0.03, s1: 0.78, view: 'endurance',
     tag: 'STAGE 02 · CRUISE',
     facts: [
-      'dock with the mothership. it has been waiting in orbit — too big to ever land.',
-      'the big ring spins so the floor pushes up on your feet. instant fake gravity.',
-      'engines OFF for 8 months. the sun does the steering for free — we just coast.',
-      'gym is mandatory. 2 hours a day or your bones get weak. no refunds.',
-      'all water on board is recycled. yes, even that. cleaner than what you drink at home.',
-      'frozen and dried food. friday is movie night — the popcorn floats if you leave the ring.',
-      'day 60: Earth is just a pale blue dot out the window. kinda emotional ngl.',
-      'we slow down the further we get from the sun — it is all uphill from here.',
+      'dock with the mothership. it has been waiting in orbit we put it in.',
+      'all your devices will be fully functional once we finish docking.',
+      'spins so the floor pushes up on your feet. fake gravity.',
+      'were gonna be almost 2 inches taller in space as your spine relaxes.',
+      'engines are on low for 6 months. the suns gravity is gonna do the work for us, we just coast.',
+      'please dont forget to use the gym or play sports. atleast 1-2 hours a day or.. your bones get weak.',
+      'all water on board is recycled. even piss. but it is clean what youd drink at home.',
+      'all frozen and dried food.',
+      'all the rooms are lighted up because we have a lot of space nomads onboard there. i still dont get how they make it work.',
+      'Planets are going to much farther than it looks here but youre gonna see our blue dot. pretty common to get emotional ngl.',
+      'we slow down the further we get from the sun. For the science students it is all uphill from here if you can remember the keplers laws.',
     ]
   },
   {
     key: 'approach', label: '03 · APPROACH', short: 'APPROACH', dur: 70, mode: 'helio', s0: 0.78, s1: 0.94, view: 'approach',
     tag: 'STAGE 03 · APPROACH',
     facts: [
-      'after 8 months Mars grows from a dot, to a coin, to a planet. everyone is at the windows.',
-      'a call home now takes 15 minutes to arrive. arguments with mission control take forever.',
-      'Mars has two tiny potato-shaped moons. one is slowly falling and will become a ring someday.',
-      'big brake burn — the mothership parks high above Mars. this is as close as it ever gets.',
-      'everyone packs into the shuttle. the descent crew look way too relaxed.',
+      'within these 6 months, Mars grows from a dot, to a red coin, to a new planet.',
+      'a call home now takes 15 minutes to arrive.',
+      'Mars has two tiny potato-shaped moons. which idk why i cant see in the screen now. one is slowly falling and will become a ring someday.',
+      'the mothership is gonna slow down a bit near mars. this is as close as it ever gets.',
+      'youre gonna pack into the shuttle again, ready to descend.',
     ]
   },
   {
     key: 'edl', label: '04 · DESCENT & LANDING', short: 'DESCENT & LANDING', dur: 80, mode: 'edl', s0: 0.94, s1: 1.0,
     tag: 'STAGE 04 · DESCENT & LANDING',
     facts: [
-      'the shuttle pops off the mothership and just... drops.',
-      'mars air is super thin, but at this speed it still burns like a meteor. enjoy the orange glow.',
-      'the air does most of the braking for free. the engines handle the last bit.',
-      'no parachutes — too heavy for that here. we land on the engines, like the rockets back home.',
-      'flip upright, legs out, ride the flame down. way easier than takeoff thanks to the low gravity.',
-      'the landing pads were poured by robots two years before any person arrived.',
-      'touchdown. dust everywhere. 480 million km, door to door.',
+      'the shuttle pops off the mothership and we just drop.',
+      'mars air is super thin, but our speeds are gonna be high',
+      'the air does most of the braking for free. the engines helps us slow down',
+      'touchdown. dust everywhere. 150 million km from home. tisses are always gonna be in the seats for the teary eyed.',
+      'the sky is gonna be red from mars surface. youll learn more soon.'
+
     ]
   },
   {
     key: 'surface', label: '05 · SURFACE OPERATIONS', short: 'SURFACE OPS', dur: 45, mode: 'helio', s0: 1.0, s1: 1.0, view: 'surface',
     tag: 'STAGE 05 · SURFACE OPERATIONS',
     facts: [
-      'welcome to Mars. you weigh a third of what you did at home — but after months floating, standing is hard.',
+      'And youre on mars. you weigh a third of what you did at home. but after months floating, standing is hard. legs are gonna feel like jelly',
       'inside the colony it is a comfy 18°C. outside it is -60 and the air is unbreathable. stay inside.',
       'the greenhouse grows real salad. it is the most popular building — people miss green.',
       'water comes from ice mined underground, oxygen is made from the air. nothing is wasted.',
@@ -2957,7 +2959,7 @@ function endVoyage() {
     if (voyage.ground) voyage.ground.visible = false;
     if (voyage.earthGround) voyage.earthGround.visible = false;
     if (voyage.launchField) voyage.launchField.visible = false;
-  if (voyage.launchRoad) voyage.launchRoad.visible = false;
+    if (voyage.launchRoad) voyage.launchRoad.visible = false;
     if (voyage.launchPad) voyage.launchPad.visible = false;
     if (voyage.launchSky) voyage.launchSky.visible = false;
     if (voyage.vaporCone) voyage.vaporCone.visible = false;
